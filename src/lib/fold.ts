@@ -177,6 +177,49 @@ export interface AcceptRecord {
   summary: string;
 }
 
+export interface DispatchRecord {
+  seq: number;
+  at: number;
+  round: number;
+  next: NodeId | "ask_human" | "done";
+  reason: string;
+  brief: string;
+  budget: { dispatches: number; maxDispatches: number };
+}
+
+export interface GateRecord {
+  seq: number;
+  at: number;
+  gate: string;
+  trigger: string;
+  ok: boolean;
+  blocking: boolean;
+  facts: string[];
+  durationMs: number;
+}
+
+export interface BudgetRecord {
+  seq: number;
+  at: number;
+  dispatches: number;
+  maxDispatches: number;
+  sameRoleStreak: number;
+  tokens: number;
+  costUsd: number;
+}
+
+export interface ScreenProbeRecord {
+  seq: number;
+  at: number;
+  ok: boolean;
+  layers: number;
+  clickables: string[];
+  inputs: string[];
+  regions: string[];
+  openedVia?: string;
+  createdVia?: string;
+}
+
 export interface ChatTurn {
   seq: number;
   turn: number;
@@ -233,6 +276,14 @@ export interface RunState {
   qaCoverageRetries: QaCoverageRetryRecord[];
   /** Emma 的历次交付验收 —— 功能通过之后「能不能交出去」的判断 */
   accepts: AcceptRecord[];
+  /** Piper 每一次派单及理由。 */
+  dispatches: DispatchRecord[];
+  /** 平台门禁的事实判定。 */
+  gates: GateRecord[];
+  /** 每轮派单后的真实预算快照。 */
+  budgetHistory: BudgetRecord[];
+  /** Tess 写用例前看到的真实界面控件。 */
+  screenProbes: ScreenProbeRecord[];
   /** 首轮生成之后的历次对话迭代 */
   chat: ChatTurn[];
   /** 已经进行到第几轮迭代(0 = 只有首轮生成) */
@@ -268,6 +319,10 @@ export function emptyState(): RunState {
     auditExhausted: [],
     qaCoverageRetries: [],
     accepts: [],
+    dispatches: [],
+    gates: [],
+    budgetHistory: [],
+    screenProbes: [],
     chat: [],
     turn: 0,
     fixDiffs: [],
@@ -403,6 +458,57 @@ export function applyEvent(s: RunState, env: Envelope<RunEvent>): RunState {
 
     case "artifact":
       applyArtifact(s, e.kind, e.data);
+      break;
+
+    case "dispatch.decided":
+      s.dispatches.push({
+        seq: env.seq,
+        at: env.ts,
+        round: e.round,
+        next: e.next,
+        reason: e.reason,
+        brief: e.brief,
+        budget: e.budget,
+      });
+      break;
+
+    case "gate.verdict":
+      s.gates.push({
+        seq: env.seq,
+        at: env.ts,
+        gate: e.gate,
+        trigger: e.trigger,
+        ok: e.ok,
+        blocking: e.blocking,
+        facts: e.facts,
+        durationMs: e.durationMs,
+      });
+      break;
+
+    case "budget.spent":
+      s.budgetHistory.push({
+        seq: env.seq,
+        at: env.ts,
+        dispatches: e.dispatches,
+        maxDispatches: e.maxDispatches,
+        sameRoleStreak: e.sameRoleStreak,
+        tokens: e.tokens,
+        costUsd: e.costUsd,
+      });
+      break;
+
+    case "screen.probed":
+      s.screenProbes.push({
+        seq: env.seq,
+        at: env.ts,
+        ok: e.ok,
+        layers: e.layers,
+        clickables: e.clickables,
+        inputs: e.inputs,
+        regions: e.regions,
+        openedVia: e.openedVia,
+        createdVia: e.createdVia,
+      });
       break;
 
     case "hitl.awaiting":

@@ -70,6 +70,13 @@ export function checkTargets(
   /** 与执行器的宽松区域匹配同一套判据:互为子串即认为指的是同一个东西 */
   const relatedToReal = (w: string) =>
     realNames.some((n) => n.includes(w) || w.includes(n));
+  /**
+   * 与执行器的区域宽松匹配保持一致：模型常给标题补一个描述性后缀，
+   * 「想读书架」「待审批列表」「待办列」都可能指向标题为「想读/待审批/待办」
+   * 的唯一容器。探查尚未造出数据时看不到这些动态区域，但源码里会有标题词根。
+   */
+  const withoutRegionSuffix = (value: string) =>
+    value.replace(/(?:任务)?(?:书架|列表|区域|标签|分组|栏目|清单|列)$/u, "");
   const problems: string[] = [];
 
   for (const tc of cases) {
@@ -85,7 +92,14 @@ export function checkTargets(
 
       // 整串就能落到某个真实控件上时直接放行 —— 「待办列」对「待办」区域、
       // 「张三 编辑」对那一行的编辑按钮,执行器都认,门就不该有意见。
-      if (relatedToReal(norm(target))) return;
+      const normalizedTarget = norm(target);
+      if (relatedToReal(normalizedTarget)) return;
+      const regionStem = withoutRegionSuffix(normalizedTarget);
+      if (
+        regionStem &&
+        regionStem !== normalizedTarget &&
+        (source.includes(regionStem) || relatedToReal(regionStem))
+      ) return;
 
       const words = target.split(/[\s　]+/).filter(Boolean);
       const invented = words.filter((w) => {

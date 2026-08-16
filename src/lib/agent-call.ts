@@ -68,7 +68,11 @@ async function callAgent(
         model: opts.model,
         messages,
         maxTokens: opts.maxTokens,
-        jsonMode: opts.jsonMode ?? true,
+        // 默认**关**。忘记设置时的后果必须是可恢复的:
+        // 不强制 JSON 只损失一点解析便利,而强制 JSON 会让输出文件块的角色
+        // 彻底写不出东西 —— 实测里 Cody 因此连废三轮,而失败信息只显示
+        // 「没找到文件块」,看不出是被格式约束掐死的。
+        jsonMode: opts.jsonMode ?? false,
         signal,
         ...(opts.thinking ? { thinking: opts.thinking } : {}),
       },

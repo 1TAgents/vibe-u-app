@@ -93,6 +93,80 @@ export function toFeed(state: RunState): FeedItem[] {
     }
   });
 
+  /* --- Piper 的真实派单理由：这是协作发生过的核心证据 --- */
+  state.dispatches.forEach((d, i) => {
+    const target =
+      d.next === "done"
+        ? "完成交付"
+        : d.next === "ask_human"
+          ? "交给老板"
+          : `${ROLES[d.next]?.name ?? d.next} · ${ROLES[d.next]?.title ?? d.next}`;
+    items.push({
+      id: `dispatch${i}`,
+      seq: d.seq,
+      at: d.at,
+      kind: "agent",
+      name: ROLES.dispatch.name,
+      title: ROLES.dispatch.title,
+      accent: ROLES.dispatch.accent,
+      text: `第 ${d.round} 轮 → ${target}：${d.reason}`,
+      tags: d.brief ? [d.brief] : undefined,
+      tone: d.next === "ask_human" ? "warn" : undefined,
+      status: "done",
+    });
+  });
+
+  /* --- 平台门禁：角色不能自证，门的事实必须在群聊和回放里可见 --- */
+  state.gates.forEach((g, i) => {
+    // 构建与功能验收已有更完整的 build.result / qa.result 卡片，避免重复播报。
+    if (g.gate === "build" || g.gate === "functional") return;
+    const names: Record<string, string> = {
+      build: "构建门",
+      "static-audit": "静态审计",
+      "test-plan": "测试计划体检",
+      functional: "功能验收",
+      delivery: "交付采证",
+    };
+    const detail = g.facts[0] ? `：${g.facts[0].split("\n")[0].slice(0, 140)}` : "";
+    items.push({
+      id: `gate${i}`,
+      seq: g.seq,
+      at: g.at,
+      kind: "system",
+      text: `${names[g.gate] ?? g.gate}${g.ok ? "通过" : g.blocking ? "未通过" : "有提醒"}${detail}`,
+      tags: g.facts.length > 1 ? g.facts.slice(1, 4).map((f) => f.split("\n")[0].slice(0, 50)) : undefined,
+      tone: g.ok ? "ok" : g.blocking ? "error" : "warn",
+    });
+  });
+
+  /* --- 界面探查：Tess 是看着真实控件写用例，还是在猜 --- */
+  state.screenProbes.forEach((p, i) => {
+    items.push({
+      id: `probe${i}`,
+      seq: p.seq,
+      at: p.at,
+      kind: "system",
+      text: p.ok
+        ? `界面探查完成 · ${p.layers} 层 · ${p.clickables.length} 个操作入口 · ${p.inputs.length} 个输入控件`
+        : "界面探查失败，Tess 将只能依据源码写用例",
+      tags: [...p.clickables, ...p.inputs].slice(0, 6),
+      tone: p.ok ? "ok" : "warn",
+    });
+  });
+
+  /* --- 预算快照：只显示阶段性节点，避免每轮都刷一条系统消息 --- */
+  state.budgetHistory.forEach((b, i) => {
+    if (b.dispatches % 5 !== 0 && b.dispatches < Math.ceil(b.maxDispatches * 0.7)) return;
+    items.push({
+      id: `budget${i}`,
+      seq: b.seq,
+      at: b.at,
+      kind: "system",
+      text: `预算 ${b.dispatches}/${b.maxDispatches} 轮 · ${(b.tokens / 1000).toFixed(1)}k token · $${b.costUsd.toFixed(4)}`,
+      tone: b.dispatches >= Math.ceil(b.maxDispatches * 0.7) ? "warn" : undefined,
+    });
+  });
+
   /* --- 构建 --- */
   state.buildHistory.forEach((b, i) => {
     items.push({
@@ -332,6 +406,7 @@ function speak(
 
   if (phase === "running") {
     const doing: Record<string, string> = {
+      dispatch: "正在判断下一步交给谁…",
       pm: "正在把需求拆成 PRD…",
       intake: "正在判断这条需求该交给谁…",
       pmChange: "正在把新要求更新进 PRD…",
@@ -344,11 +419,15 @@ function speak(
       qa: "正在写验收用例…",
       triage: "正在归因并分配责任…",
       review: "正在复审设计…",
+      accept: "正在做交付验收…",
     };
     return (doing[node] ?? "处理中…") + retry;
   }
 
   switch (node) {
+    case "dispatch":
+      return `派单判断完成${retry}`;
+
     case "pm":
       return state.prd
         ? `PRD 写好了:《${state.prd.title}》,${state.prd.coreFeatures.length} 个核心功能${retry}`

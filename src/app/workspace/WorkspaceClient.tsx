@@ -26,8 +26,8 @@ import { cn } from "@/lib/cn";
 import { useRun } from "@/lib/useRun";
 
 type View = "design" | "code" | "preview" | "tests";
-const CHAT_COLLAPSED_KEY = "atoms-glassbox:chat-collapsed";
-const CHAT_COLLAPSED_EVENT = "atoms-glassbox:chat-collapsed-change";
+const CHAT_COLLAPSED_KEY = "vibeu:chat-collapsed";
+const CHAT_COLLAPSED_EVENT = "vibeu:chat-collapsed-change";
 
 export function WorkspaceClient() {
   const params = useSearchParams();
@@ -75,17 +75,12 @@ export function WorkspaceClient() {
     () => (runId && typeof window !== "undefined" ? `${window.location.origin}/r/${runId}` : ""),
     [runId],
   );
-  const appUrl = useMemo(
-    () => (runId && typeof window !== "undefined" ? `${window.location.origin}/a/${runId}` : ""),
-    [runId],
-  );
-
   return (
     <div className="flex h-screen flex-col bg-ink-950">
       <header className="shrink-0 border-b border-ink-800 bg-ink-900/50 px-4 py-2.5">
         <div className="flex items-center gap-3">
           <Link href="/" className="shrink-0 text-sm font-medium tracking-tight text-ink-200">
-            Atoms <span className="text-emerald-400">Glassbox</span>
+            <span className="text-emerald-400">VibeU</span>
           </Link>
           <span className="min-w-0 flex-1 truncate text-[13px] text-ink-400" title={state.prompt}>
             {state.prompt || prompt || "—"}
@@ -173,24 +168,9 @@ export function WorkspaceClient() {
               测试
             </ViewTab>
             {phase === "succeeded" && runId && (
-              <>
-                <span className="ml-auto rounded-full bg-emerald-500/15 px-2.5 py-1 text-[11px] text-emerald-300">
-                  已通过运行时校验
-                </span>
-                <CopyLink
-                  url={appUrl}
-                  label="复制应用链接"
-                  title="复制可独立打开的已发布应用链接"
-                />
-                {/* 交付的终点是一个别人打得开的链接,不是工作区里的一个预览面板 */}
-                <Link
-                  href={`/a/${runId}`}
-                  target="_blank"
-                  className="rounded-lg bg-emerald-500 px-3 py-1.5 text-[12px] font-medium text-ink-950 transition-colors hover:bg-emerald-400"
-                >
-                  打开独立应用 ↗
-                </Link>
-              </>
+              <span className="ml-auto rounded-full bg-emerald-500/15 px-2.5 py-1 text-[11px] text-emerald-300">
+                完整流程已通过
+              </span>
             )}
           </nav>
 
@@ -210,7 +190,7 @@ export function WorkspaceClient() {
                     onReject={() => void reject()}
                   />
                 ) : (
-                  <Placeholder text="Emma 正在写 PRD…" />
+                  <Placeholder text="Ida 正在写 PRD…" />
                 )}
                 {state.visual && <VisualDesignCard visual={state.visual} />}
                 {state.design && <DesignCard design={state.design} />}
@@ -222,7 +202,7 @@ export function WorkspaceClient() {
               {runId && state.files.length > 0 ? (
                 <Preview runId={runId} version={version} />
               ) : (
-                  <Placeholder text="Maya 正在定视觉方案，随后由 Alex 实现" />
+                  <Placeholder text="Luna 正在定视觉方案，随后由 Cody 实现" />
               )}
             </div>
           </div>

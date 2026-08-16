@@ -17,6 +17,7 @@ export default function Home() {
   const [model, setModel] = useState("");
   const [models, setModels] = useState<string[]>([]);
   const [runs, setRuns] = useState<RunSummary[]>([]);
+  const [reviewRequirements, setReviewRequirements] = useState(false);
 
   useEffect(() => {
     void fetch("/api/models")
@@ -35,9 +36,8 @@ export default function Home() {
   const go = (p: string) => {
     const q = p.trim();
     if (!q) return;
-    router.push(
-      `/workspace?prompt=${encodeURIComponent(q)}&model=${encodeURIComponent(model)}`,
-    );
+    const review = reviewRequirements ? "&review=1" : "";
+    router.push(`/workspace?prompt=${encodeURIComponent(q)}&model=${encodeURIComponent(model)}${review}`);
   };
 
   return (
@@ -80,6 +80,19 @@ export default function Home() {
               ))}
             </select>
             <span className="text-[11px] text-ink-600">⌘/Ctrl + Enter 开跑</span>
+            <button
+              type="button"
+              onClick={() => setReviewRequirements((value) => !value)}
+              aria-pressed={reviewRequirements}
+              title="开启后，Ida 写完 PRD 会先暂停，允许你修改或批准"
+              className={`rounded border px-2 py-1.5 text-[11px] transition-colors ${
+                reviewRequirements
+                  ? "border-violet-500/50 bg-violet-500/15 text-violet-200"
+                  : "border-ink-700 text-ink-500 hover:text-ink-300"
+              }`}
+            >
+              需求审核 {reviewRequirements ? "开" : "关"}
+            </button>
             <button
               onClick={() => go(prompt)}
               disabled={!prompt.trim()}

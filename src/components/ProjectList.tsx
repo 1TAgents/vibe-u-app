@@ -8,9 +8,8 @@
  * 历次对话迭代、每一次失败与自愈,全都按序追加在同一条流里。
  * 所以 run 就是项目,不需要在它之上再包一层。
  *
- * 同一个项目有三个入口,对应三种意图:
+ * 同一个项目有两个入口,对应两种意图:
  *   继续改 → 工作区(可编辑,带对话)
- *   打开应用 → 成品页(给用户用的)
  *   回放 → 只读时间轴(给别人看的)
  */
 
@@ -104,7 +103,6 @@ export function ProjectList({ runs }: { runs: RunSummary[] }) {
       <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
         {shown.map((r) => {
           const st = STATUS[r.status] ?? STATUS.running;
-          const usable = r.status === "succeeded";
           return (
             <div
               key={r.id}
@@ -138,15 +136,6 @@ export function ProjectList({ runs }: { runs: RunSummary[] }) {
                 >
                   继续改
                 </Link>
-                {usable && (
-                  <Link
-                    href={`/a/${r.id}`}
-                    target="_blank"
-                    className="rounded-lg bg-emerald-500/90 px-2.5 py-1.5 text-[11px] font-medium text-ink-950 transition-colors hover:bg-emerald-400"
-                  >
-                    打开独立应用 ↗
-                  </Link>
-                )}
                 <Link
                   href={`/r/${r.id}`}
                   className="ml-auto text-[11px] text-ink-500 transition-colors hover:text-ink-300"

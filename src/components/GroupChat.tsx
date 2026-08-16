@@ -57,13 +57,11 @@ export function GroupChat({
 
   const feed = toFeed(state);
 
-  // 停在审批门上时也要能说话 —— 老板看完需求清单不会去逐条点复选框,
-  // 他会直接说「第三条不要,加一个按月筛选」。此刻一行代码都还没写,改需求最便宜。
   const refining = phase === "awaiting_approval";
+  // 审核阶段直接在右侧 PRD 卡接管修改并批准；群聊输入只处理已有产品的后续需求。
   const ready =
-    refining ||
-    (state.files.length > 0 &&
-      (phase === "succeeded" || phase === "failed" || phase === "verifying"));
+    state.files.length > 0 &&
+    (phase === "succeeded" || phase === "failed" || phase === "verifying");
   const busy = phase === "generating" || phase === "fixing";
 
   // 只在用户没有主动往上翻时才自动贴底 —— 否则他正看历史就被拽走了
@@ -125,7 +123,7 @@ export function GroupChat({
 
       {!readOnly && ready && state.chat.length === 0 && (
         <div className="shrink-0 px-3 pb-2">
-          <p className="mb-1.5 text-[10px] text-ink-600">示例需求 · 点击后仍需发送，Emma 会先判断交给谁</p>
+          <p className="mb-1.5 text-[10px] text-ink-600">示例需求 · 点击后仍需发送，Piper 会先判断交给谁</p>
           <div className="flex flex-wrap gap-1.5">
             {QUICK.map((q) => (
               <button
@@ -161,7 +159,7 @@ export function GroupChat({
             rows={2}
             placeholder={
               refining
-                ? "对需求有想法就直接说，比如：第 3 条不要，加一个按月筛选"
+                ? "请在右侧 PRD 卡中修改或批准需求"
                 : ready
                   ? "在群里说一句，比如：把主色调换成深蓝"
                   : busy

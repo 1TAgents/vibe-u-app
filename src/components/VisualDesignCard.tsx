@@ -2,7 +2,7 @@
 
 import type { VisualDesign } from "@/lib/roles";
 
-/** Maya 的视觉方案是一等产物，不应只埋在工程师 Prompt 里。 */
+/** Luna 的视觉方案是一等产物，不应只埋在工程师 Prompt 里。 */
 export function VisualDesignCard({ visual }: { visual: VisualDesign }) {
   const palette = [
     ["画布", visual.palette.canvas],
@@ -17,7 +17,7 @@ export function VisualDesignCard({ visual }: { visual: VisualDesign }) {
       <header className="flex items-center gap-2 border-b border-ink-800 px-4 py-3">
         <span className="size-2 rounded-full bg-fuchsia-400" />
         <h2 className="text-sm font-medium text-ink-200">产品视觉方案</h2>
-        <span className="text-[11px] text-ink-400">Maya · 产品设计师</span>
+        <span className="text-[11px] text-ink-400">Luna · 产品设计师</span>
       </header>
 
       <div className="space-y-5 px-4 py-4">

@@ -129,6 +129,18 @@ function tc(name: string, steps: TestCase["steps"]): TestCase {
 }
 
 {
+  // 实测读书清单：探查只到新增弹窗，还没造出书籍，因此 names 里没有动态书架；
+  // 但执行器运行用例后能把「想读书架」唯一落到标题为「想读」的容器。
+  const r = checkTargets(
+    [tc("书架区域", [{ action: "expectTextWithin", target: "想读书架", text: "深夜书店" }] as TestCase["steps"])],
+    src(`<section><h2>想读</h2>{books.map(book => <article>{book.title}</article>)}</section>`),
+    { names: ["新增书籍", "输入书名"] },
+  );
+  assert.deepEqual(r.problems, [], "描述性书架后缀应与执行器的区域宽松匹配一致");
+  ok("「想读书架」不被误拒(动态区域尚未出现在探查层时仍与执行器一致)");
+}
+
+{
   // 组合写法同理:执行器会去那一行里找「编辑」
   const r = checkTargets(
     [

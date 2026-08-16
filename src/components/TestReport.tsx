@@ -26,7 +26,7 @@ export function TestReport({ state }: { state: RunState }) {
   if (cases.length === 0 && rounds.length === 0 && state.accepts.length === 0) {
     return (
       <div className="flex h-full items-center justify-center">
-        <p className="text-sm text-ink-500">Vera 还没开始设计质量验收</p>
+        <p className="text-sm text-ink-500">Tess 还没开始设计质量验收</p>
       </div>
     );
   }
@@ -90,7 +90,7 @@ export function TestReport({ state }: { state: RunState }) {
           <header className="flex items-center gap-2 border-b border-ink-800 px-4 py-3">
             <span className="size-2 rounded-full bg-amber-400" />
             <h2 className="text-sm font-medium text-ink-200">验收用例</h2>
-            <span className="text-[11px] text-ink-400">Vera · 质量工程师</span>
+            <span className="text-[11px] text-ink-400">Tess · 质量工程师</span>
             <span className="ml-auto text-[11px] text-ink-500">
               写定后不再改动,历次都跑同一批
             </span>
@@ -240,7 +240,7 @@ function AcceptCard({
           )}
         />
         <h2 className="text-sm font-medium text-ink-200">交付验收</h2>
-        <span className="text-[11px] text-ink-400">Emma · 产品负责人</span>
+        <span className="text-[11px] text-ink-400">Ida · 产品负责人</span>
         <span
           className={cn(
             "text-[12px]",

@@ -43,7 +43,7 @@ export function PrdCard({
       <header className="flex items-center gap-2 border-b border-ink-800 px-4 py-3">
         <span className="size-2 rounded-full bg-violet-400" />
         <h2 className="text-sm font-medium text-ink-200">产品需求文档</h2>
-        <span className="text-[11px] text-ink-400">Emma · 产品负责人</span>
+        <span className="text-[11px] text-ink-400">Ida · 产品负责人</span>
         {decided && (
           <span
             className={cn(

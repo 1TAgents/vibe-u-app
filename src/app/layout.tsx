@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Atoms Glassbox · 把 AI 产品团队装进玻璃盒",
+  title: "VibeU · 可审计的 AI 产品团队",
   description:
     "用自然语言生成可运行、可持久化、可分享的全栈应用 —— 并且整个过程是透明、可审计、可回放的。",
 };

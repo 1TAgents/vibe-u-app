@@ -32,7 +32,7 @@ export function VerifyPanel({ state }: { state: RunState }) {
         <span className="size-2 rounded-full bg-amber-400" />
         <h2 className="text-sm font-medium text-ink-200">运行时校验与自愈</h2>
         <span className="text-[11px] text-ink-400">
-          Vera · 质量工程师 · 在真实浏览器里跑起来再下结论
+          Tess · 质量工程师 · 在真实浏览器里跑起来再下结论
         </span>
       </header>
 

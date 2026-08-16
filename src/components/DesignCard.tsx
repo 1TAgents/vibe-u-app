@@ -8,7 +8,7 @@ export function DesignCard({ design }: { design: Design }) {
       <header className="flex items-center gap-2 border-b border-ink-800 px-4 py-3">
         <span className="size-2 rounded-full bg-sky-400" />
         <h2 className="text-sm font-medium text-ink-200">技术设计</h2>
-        <span className="text-[11px] text-ink-400">Bob · 系统架构师</span>
+        <span className="text-[11px] text-ink-400">Archie · 系统架构师</span>
       </header>
 
       <div className="space-y-5 px-4 py-4">

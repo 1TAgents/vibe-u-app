@@ -62,6 +62,10 @@ export interface DispatchView {
   facts: string[];
   /** 门有没有全过 */
   gatesPassed: boolean;
+  /** 功能验收是否针对最新代码通过 */
+  qaPassed: boolean;
+  /** Ida 是否已经对最新版本做完交付验收 */
+  accepted: boolean;
   /** 预算余额,渲染好的文字 */
   budget: string;
   /** 过软线之后的收敛提示 */
@@ -93,6 +97,13 @@ export function dispatchPrompt(view: DispatchView) {
   accept     让 Ida 做交付验收(功能之外还要看使用习惯与视觉)
   ask_human  卡住了,把问题整理清楚交给老板
   done       已经可以交付了
+
+职责边界必须严格遵守:
+  · pm 只在 PRD 缺失，或老板的新要求确实改变产品定义时使用；**不能让 pm 代替最终验收**。
+  · accept 是唯一的产品交付验收入口，但只能在“最新代码的功能验收已通过”之后使用。
+  · 如果状态明确写着“功能验收尚未针对当前代码通过”，下一步必须是 qa，不是 engineer、pm 或 accept。
+  · 没有具体失败用例与失败步骤，只是“尚未运行/需要重跑”，不构成派 engineer 修代码的证据。
+  · 代码重新构建后，旧 QA 一律失效，即使测试用例还在，也必须再派 qa 执行当前版本。
 
 ${COMMON_PATH}
 
@@ -132,6 +143,8 @@ ${view.followUps.length > 0 ? `\n老板后来又说:\n${view.followUps.map((f, i
   数据模型   ${view.design ? `已有(${view.design.dataModel.length} 个 collection)` : "还没有"}
   代码       ${view.hasCode ? "已有" : "还没有"}
   验收用例   ${view.hasTests ? "已有" : "还没有"}
+  功能验收   ${view.qaPassed ? "最新代码已通过" : "尚未针对最新代码通过"}
+  交付验收   ${view.accepted ? "已通过" : "尚未通过"}
 ${view.last ? `\n上一轮:派给了 ${view.last.role},让他「${view.last.brief}」` : ""}
 
 刚刚发生了什么(平台判定的事实,不是谁的说法):

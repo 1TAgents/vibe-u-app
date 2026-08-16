@@ -114,7 +114,7 @@ export function ReplayClient({ runId }: { runId: string }) {
       <header className="shrink-0 border-b border-ink-800 bg-ink-900/50 px-4 py-2.5">
         <div className="flex items-center gap-3">
           <Link href="/" className="shrink-0 text-sm font-medium tracking-tight text-ink-200">
-            Atoms <span className="text-emerald-400">Glassbox</span>
+            <span className="text-emerald-400">VibeU</span>
           </Link>
           <span className="rounded bg-ink-800 px-2 py-0.5 text-[11px] text-ink-400">
             回放

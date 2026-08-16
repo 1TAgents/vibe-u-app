@@ -18,6 +18,7 @@ export async function POST(req: Request) {
     prompt?: string;
     model?: string;
     scenarioId?: string;
+    autoApprove?: boolean;
   };
   const prompt = (body.prompt ?? "").trim();
   if (!prompt) {
@@ -42,7 +43,17 @@ export async function POST(req: Request) {
     runId,
     0,
     async (sink, signal) => {
-      await runLoop(sink, { runId, request: prompt, model, scenarioId: body.scenarioId }, signal);
+      await runLoop(
+        sink,
+        {
+          runId,
+          request: prompt,
+          model,
+          scenarioId: body.scenarioId,
+          pauseAfterPrd: body.autoApprove === false,
+        },
+        signal,
+      );
     },
     undefined,
     req.signal,

@@ -31,6 +31,7 @@ import {
   PrdSchema,
   TestCaseSchema,
   VisualDesignSchema,
+  AcceptanceSchema,
   architectPrompt,
   engineerPrompt,
   fixPrompt,
@@ -52,10 +53,11 @@ import {
   emptyBudget,
   failureSignature,
   spend,
+  record,
   type BudgetState,
 } from "./budget";
 import { appHtml, buildApp, type BuildSuccess } from "./builder";
-import { collectScreenInventory } from "./delivery";
+import { collectScreenInventory, type ScreenInventory } from "./delivery";
 import { EventSink } from "./sink";
 import { RUNTIME_PATHS, withRuntimeFiles } from "./runtime-files";
 import { getStore } from "./store";
@@ -75,6 +77,7 @@ interface WorkState {
   built?: BuildSuccess;
   html?: string;
   screenNames: string[];
+  screen?: ScreenInventory;
   /** 最近一次门产出的事实 —— 下一轮决策的主要依据 */
   facts: string[];
   gatesPassed: boolean;
@@ -83,15 +86,29 @@ interface WorkState {
   attempts: string[];
   budget: BudgetState;
   scenarioId?: string;
+  /** 只有交付门与 Ida 验收都通过后才为 true。任何上游产物变化都会重置 */
+  accepted: boolean;
+  /** 最近一次功能验收是否针对当前代码通过。 */
+  qaPassed: boolean;
 }
 
 export interface RunResult {
-  status: "succeeded" | "handoff" | "failed";
+  status: "succeeded" | "handoff" | "failed" | "awaiting_approval";
   files: GeneratedFile[];
 }
 
 const authored = (files: GeneratedFile[]) =>
   files.filter((f) => !RUNTIME_PATHS.has(f.path));
+
+/** 修复角色只返回改动文件；按路径覆盖，不能把未改文件从项目里删掉。 */
+export function mergeGeneratedFiles(
+  current: GeneratedFile[],
+  changed: GeneratedFile[],
+): GeneratedFile[] {
+  const files = new Map(authored(current).map((f) => [f.path, f]));
+  for (const file of changed) files.set(file.path, file);
+  return [...files.values()].sort((a, b) => a.path.localeCompare(b.path));
+}
 
 /**
  * 产物出现之后,把该跑的门都跑掉,并把事实写回状态。
@@ -105,6 +122,12 @@ async function fireGates(
   trigger: Parameters<typeof runGates>[0],
   runId: string,
 ): Promise<GateRunResult> {
+  if (trigger === "artifact:files") {
+    sink.emit({ type: "build.started", attempt: st.budget.dispatches });
+  } else if (trigger === "state:code-ready") {
+    sink.emit({ type: "qa.started", attempt: st.budget.dispatches });
+  }
+
   const r = await runGates(trigger, {
     runId,
     files: st.files,
@@ -126,6 +149,42 @@ async function fireGates(
       facts: v.facts,
       durationMs: v.durationMs,
     });
+
+    if (v.gate === "build") {
+      const built = v.evidence as BuildSuccess | undefined;
+      sink.emit({
+        type: "build.result",
+        attempt: st.budget.dispatches,
+        ok: v.ok,
+        bytes: built?.ok ? built.bytes : undefined,
+        durationMs: v.durationMs,
+        errors: v.ok ? [] : v.facts,
+      });
+    }
+
+    if (v.gate === "functional") {
+      const report = v.evidence as
+        | { passed: number; failed: number; durationMs: number; failures: { case: string; stepIndex: number; message: string }[] }
+        | undefined;
+      const cases = (st.cases ?? []).map((tc) => {
+        const failure = report?.failures.find((f) => f.case === tc.name);
+        return {
+          name: tc.name,
+          covers: tc.covers,
+          ok: Boolean(report) && !failure,
+          reason: failure ? `第 ${failure.stepIndex + 1} 步 ${failure.message}` : undefined,
+        };
+      });
+      sink.emit({
+        type: "qa.result",
+        attempt: st.budget.dispatches,
+        passed: report?.passed ?? 0,
+        failed: report?.failed ?? cases.length,
+        durationMs: report?.durationMs ?? v.durationMs,
+        cases,
+      });
+      st.qaPassed = v.ok;
+    }
   }
 
   st.facts = r.facts;
@@ -160,9 +219,55 @@ function viewOf(st: WorkState, warn?: string): DispatchView {
     last: st.last,
     facts: st.facts,
     gatesPassed: st.gatesPassed,
+    qaPassed: st.qaPassed,
+    accepted: st.accepted,
     budget: describeBudget(st.budget),
     warn,
   };
+}
+
+/** 把 EventSink 的真实累计用量同步进调度预算，避免重复累加。 */
+function syncUsage(st: WorkState, sink: EventSink) {
+  const tokenDelta = Math.max(0, sink.totals.totalTokens - st.budget.tokens);
+  const costDelta = Math.max(0, sink.totals.costUsd - st.budget.costUsd);
+  if (tokenDelta > 0 || costDelta > 0) {
+    st.budget = record(st.budget, { totalTokens: tokenDelta, costUsd: costDelta });
+  }
+}
+
+function budgetWarning(st: WorkState): string | undefined {
+  const remaining = DEFAULT_LIMITS.maxDispatches - st.budget.dispatches;
+  return st.budget.dispatches / DEFAULT_LIMITS.maxDispatches >= 0.7
+    ? `预算只剩 ${remaining} 轮，优先完成最确定的动作；没有把握时交给人，不要继续试探。`
+    : undefined;
+}
+
+/** 平台拥有最终完成判定权，Piper 只能提出 done，不能绕过这些事实。 */
+export function completionIssues(st: {
+  prd?: unknown;
+  visual?: unknown;
+  design?: unknown;
+  files: GeneratedFile[];
+  cases?: TestCase[];
+  built?: BuildSuccess;
+  html?: string;
+  accepted?: boolean;
+  qaPassed?: boolean;
+}): string[] {
+  const missing: string[] = [];
+  if (!st.prd) missing.push("PRD");
+  if (!st.visual) missing.push("视觉方案");
+  if (!st.design) missing.push("架构设计");
+  if (authored(st.files).length === 0) missing.push("代码");
+  if (!st.built || !st.html) missing.push("最新代码构建");
+  if ((st.cases?.length ?? 0) === 0) missing.push("验收用例");
+  if (!st.qaPassed) missing.push("功能验收通过");
+  if (!st.accepted) missing.push("交付验收");
+  return missing;
+}
+
+function completionReady(st: WorkState): boolean {
+  return completionIssues(st).length === 0;
 }
 
 /* --------------------------- 五个角色干活 --------------------------- */
@@ -178,6 +283,10 @@ async function runRole(
   const model = st.model;
 
   if (next === "pm") {
+    st.accepted = false;
+    st.qaPassed = false;
+    st.built = undefined;
+    st.html = undefined;
     const p = pmPrompt(`${st.request}\n\n本轮要求:${brief}`);
     st.prd = await callAgentParsed(
       sink,
@@ -192,6 +301,10 @@ async function runRole(
 
   if (next === "designer") {
     if (!st.prd) throw new Error("还没有 PRD,设计无从下手");
+    st.accepted = false;
+    st.qaPassed = false;
+    st.built = undefined;
+    st.html = undefined;
     const p = visualDesignerPrompt(`${st.request}\n\n本轮要求:${brief}`, st.prd);
     st.visual = await callAgentParsed(
       sink,
@@ -205,6 +318,10 @@ async function runRole(
 
   if (next === "architect") {
     if (!st.prd || !st.visual) throw new Error("架构要在 PRD 与视觉方案之后");
+    st.accepted = false;
+    st.qaPassed = false;
+    st.built = undefined;
+    st.html = undefined;
     const p = architectPrompt(`${st.request}\n\n本轮要求:${brief}`, st.prd, st.visual);
     st.design = await callAgentParsed(
       sink,
@@ -218,6 +335,13 @@ async function runRole(
 
   if (next === "engineer") {
     if (!st.prd || !st.design || !st.visual) throw new Error("实现要在设计之后");
+    st.accepted = false;
+    st.qaPassed = false;
+    // 新源码出现后，旧构建产物不再代表当前文件，失败时也绝不能回退使用旧 bundle。
+    st.built = undefined;
+    st.html = undefined;
+    st.screenNames = [];
+    st.screen = undefined;
 
     // 已经有代码 = 这是一次修复,把门产出的事实原样交给他
     const isFix = st.files.length > 0;
@@ -237,11 +361,12 @@ async function runRole(
         system: p.system,
         user: `${p.user}\n\n本轮要求:${brief}`,
         maxTokens: 24000,
+        thinking: "disabled",
       },
       parseFileBlocks,
       signal,
     );
-    st.files = withRuntimeFiles(code.files);
+    st.files = withRuntimeFiles(isFix ? mergeGeneratedFiles(st.files, code.files) : code.files);
     sink.emit({ type: "artifact", kind: "files", data: authored(st.files) });
 
     await fireGates(sink, st, "artifact:files", runId);
@@ -249,7 +374,8 @@ async function runRole(
     if (st.gatesPassed && st.html) {
       try {
         const inv = await collectScreenInventory(st.html, runId);
-        st.screenNames = [
+        st.screen = inv;
+        st.screenNames = [...new Set([
           ...inv.clickables,
           ...inv.inputs,
           ...inv.regions,
@@ -257,9 +383,36 @@ async function runRole(
           ...(inv.afterOpen?.inputs ?? []),
           ...(inv.afterOpen?.clickables ?? []),
           ...(inv.afterCreate?.clickables ?? []),
-        ];
+        ])];
+        sink.emit({
+          type: "screen.probed",
+          ok: true,
+          layers: 1 + (inv.afterOpen ? 1 : 0) + (inv.afterCreate ? 1 : 0),
+          clickables: [...new Set([
+            ...inv.clickables,
+            ...(inv.afterOpen?.clickables ?? []),
+            ...(inv.afterCreate?.clickables ?? []),
+          ])],
+          inputs: [...new Set([
+            ...inv.inputs,
+            ...(inv.afterOpen?.inputs ?? []),
+            ...(inv.afterCreate?.inputs ?? []),
+          ])],
+          regions: inv.regions,
+          openedVia: inv.afterOpen?.via,
+          createdVia: inv.afterCreate?.via,
+        });
       } catch {
         st.screenNames = [];
+        st.screen = undefined;
+        sink.emit({
+          type: "screen.probed",
+          ok: false,
+          layers: 0,
+          clickables: [],
+          inputs: [],
+          regions: [],
+        });
       }
     }
     return;
@@ -267,11 +420,22 @@ async function runRole(
 
   if (next === "qa") {
     if (!st.prd) throw new Error("没有 PRD,不知道该验什么");
+    st.accepted = false;
+    st.qaPassed = false;
+    const visible = st.screen;
     const p = qaPrompt(st.prd, authored(st.files), brief, undefined, {
-      clickables: st.screenNames,
-      inputs: [],
-      regions: [],
-      headings: [],
+      clickables: [
+        ...(visible?.clickables ?? []),
+        ...(visible?.afterOpen?.clickables ?? []),
+        ...(visible?.afterCreate?.clickables ?? []),
+      ],
+      inputs: [
+        ...(visible?.inputs ?? []),
+        ...(visible?.afterOpen?.inputs ?? []),
+        ...(visible?.afterCreate?.inputs ?? []),
+      ],
+      regions: visible?.regions ?? [],
+      headings: visible?.headings ?? [],
     });
     const plan = await callAgentParsed(
       sink,
@@ -289,26 +453,92 @@ async function runRole(
   }
 
   if (next === "accept") {
+    st.accepted = false;
+    sink.emit({ type: "accept.started", attempt: st.budget.dispatches });
+    if (!st.qaPassed) {
+      const hardIssues = ["功能验收尚未针对当前代码通过"];
+      sink.emit({
+        type: "accept.result",
+        attempt: st.budget.dispatches,
+        accepted: false,
+        dimensions: {
+          functional: { ok: false, note: hardIssues[0] },
+          usability: { ok: false, note: "未进入主观验收" },
+          visual: { ok: false, note: "未进入主观验收" },
+        },
+        issues: [],
+        hardIssues,
+        summary: "请先完成 Tess 功能验收",
+      });
+      st.facts = hardIssues;
+      st.gatesPassed = false;
+      return;
+    }
+    const qaFacts = [...st.facts];
     const gate = await fireGates(sink, st, "state:qa-passed", runId);
     const evidence = gate.verdicts.find((v) => v.gate === "delivery")?.evidence;
-    if (!st.prd || !evidence) return;
+    if (!gate.passed || !st.prd || !evidence) {
+      const hardIssues = gate.facts.length > 0 ? gate.facts : ["交付证据不完整"];
+      sink.emit({
+        type: "accept.result",
+        attempt: st.budget.dispatches,
+        accepted: false,
+        dimensions: {
+          functional: { ok: false, note: "尚未满足交付前置条件" },
+          usability: { ok: false, note: "未进入主观验收" },
+          visual: { ok: false, note: "未进入主观验收" },
+        },
+        issues: [],
+        hardIssues,
+        summary: "平台交付门未通过",
+      });
+      st.facts = hardIssues;
+      st.gatesPassed = false;
+      return;
+    }
 
     const p = acceptancePrompt({
       prd: st.prd,
       visual: st.visual,
       evidence: evidence as Parameters<typeof acceptancePrompt>[0]["evidence"],
-      qaSummary: st.facts.join("\n"),
+      qaSummary: qaFacts.join("\n"),
     });
     const verdict = await callAgentParsed(
       sink,
       { node: "accept", model, system: p.system, user: p.user, maxTokens: 4000, jsonMode: true },
-      (raw) => extractJson(raw) as Record<string, unknown>,
+      (raw) => AcceptanceSchema.parse(extractJson(raw)),
       signal,
     );
     // 客观缺陷一票否决 —— 模型说通过也不算数
     const hard = (evidence as { hardIssues?: string[] }).hardIssues ?? [];
-    const accepted = Boolean(verdict.accepted) && hard.length === 0;
-    st.facts = accepted ? ["交付验收通过"] : hard.length > 0 ? hard : ["验收未通过"];
+    const dimensions = {
+      functional: verdict.functional,
+      usability: verdict.usability,
+      visual: verdict.visual,
+    };
+    const accepted =
+      verdict.accepted &&
+      dimensions.functional.ok &&
+      dimensions.usability.ok &&
+      dimensions.visual.ok &&
+      hard.length === 0;
+    sink.emit({
+      type: "accept.result",
+      attempt: st.budget.dispatches,
+      accepted,
+      dimensions,
+      issues: verdict.issues,
+      hardIssues: hard,
+      summary: verdict.summary,
+    });
+    st.accepted = accepted;
+    st.facts = accepted
+      ? ["交付验收通过"]
+      : [
+          ...hard,
+          ...verdict.issues.map((i) => `${i.dimension}:${i.problem}；期望:${i.expectation}`),
+          ...(verdict.issues.length === 0 && hard.length === 0 ? [verdict.summary || "验收未通过"] : []),
+        ];
     st.gatesPassed = accepted;
     return;
   }
@@ -325,6 +555,10 @@ export async function runLoop(
     followUps?: string[];
     scenarioId?: string;
     initial?: Partial<WorkState>;
+    /** 打开需求审核时，Ida 产出 PRD 后暂停，等待用户批准或改写。 */
+    pauseAfterPrd?: boolean;
+    /** 同一项目续跑时不重复制造 run.started。 */
+    emitRunStarted?: boolean;
   },
   signal?: AbortSignal,
 ): Promise<RunResult> {
@@ -338,21 +572,27 @@ export async function runLoop(
     gatesPassed: true,
     attempts: [],
     budget: emptyBudget(),
+    accepted: false,
+    qaPassed: false,
     scenarioId: input.scenarioId,
     ...input.initial,
   };
 
-  sink.emit({
-    type: "run.started",
-    prompt: input.request,
-    model: input.model,
-  });
+  if (input.emitRunStarted !== false) {
+    sink.emit({
+      type: "run.started",
+      prompt: input.request,
+      model: input.model,
+    });
+  }
 
   for (;;) {
-    if (signal?.aborted) return { status: "failed", files: st.files };
+    if (signal?.aborted) {
+      throw signal.reason instanceof Error ? signal.reason : new Error("运行已取消");
+    }
 
     // ---- 问 Piper:下一步派给谁 ----
-    const dp = dispatchPrompt(viewOf(st));
+    const dp = dispatchPrompt(viewOf(st, budgetWarning(st)));
     const decision = await callAgentParsed<Dispatch>(
       sink,
       {
@@ -366,6 +606,7 @@ export async function runLoop(
       (raw) => DispatchSchema.parse(extractJson(raw)),
       signal,
     );
+    syncUsage(st, sink);
 
     if (decision.next === "done") {
       sink.emit({
@@ -379,11 +620,47 @@ export async function runLoop(
           maxDispatches: DEFAULT_LIMITS.maxDispatches,
         },
       });
-      await finish(sink, input.runId, "succeeded");
-      return { status: "succeeded", files: st.files };
+      const missing = completionIssues(st);
+      if (missing.length === 0) {
+        await finish(sink, input.runId, "succeeded");
+        return { status: "succeeded", files: st.files };
+      }
+
+      const rejection = `平台拒绝结束：还缺 ${missing.join("、")}。请选择对应角色继续完成。`;
+      const sig = failureSignature([rejection]);
+      const check = checkDispatch(st.budget, "done", sig);
+      if (!check.allowed) {
+        await handoff(sink, st, check.reason, input.runId, signal);
+        return { status: "handoff", files: st.files };
+      }
+      st.budget = spend(st.budget, "done", sig);
+      st.facts = [rejection];
+      st.gatesPassed = false;
+      st.last = { role: "dispatch", brief: decision.brief };
+      st.attempts.push(`Piper 请求结束但被平台拒绝：${missing.join("、")}`);
+      sink.emit({
+        type: "budget.spent",
+        dispatches: st.budget.dispatches,
+        maxDispatches: DEFAULT_LIMITS.maxDispatches,
+        sameRoleStreak: st.budget.sameRoleStreak,
+        tokens: st.budget.tokens,
+        costUsd: st.budget.costUsd,
+      });
+      continue;
     }
 
     if (decision.next === "ask_human") {
+      sink.emit({
+        type: "dispatch.decided",
+        round: st.budget.dispatches + 1,
+        next: "ask_human",
+        reason: decision.reason,
+        brief: decision.brief,
+        budget: {
+          dispatches: st.budget.dispatches,
+          maxDispatches: DEFAULT_LIMITS.maxDispatches,
+        },
+      });
       await handoff(sink, st, decision.reason, input.runId, signal);
       return { status: "handoff", files: st.files };
     }
@@ -408,15 +685,6 @@ export async function runLoop(
         maxDispatches: DEFAULT_LIMITS.maxDispatches,
       },
     });
-    sink.emit({
-      type: "budget.spent",
-      dispatches: st.budget.dispatches,
-      maxDispatches: DEFAULT_LIMITS.maxDispatches,
-      sameRoleStreak: st.budget.sameRoleStreak,
-      tokens: sink.totals.totalTokens,
-      costUsd: sink.totals.costUsd,
-    });
-
     st.last = { role: decision.next as NodeId, brief: decision.brief };
     st.attempts.push(`派给 ${decision.next}:${decision.brief} —— ${decision.reason}`);
 
@@ -427,6 +695,25 @@ export async function runLoop(
       // 角色本身炸了(schema 连续解析失败等)也是一条事实,交给 Piper 判断
       st.facts = [err instanceof Error ? err.message : String(err)];
       st.gatesPassed = false;
+    } finally {
+      syncUsage(st, sink);
+      sink.emit({
+        type: "budget.spent",
+        dispatches: st.budget.dispatches,
+        maxDispatches: DEFAULT_LIMITS.maxDispatches,
+        sameRoleStreak: st.budget.sameRoleStreak,
+        tokens: st.budget.tokens,
+        costUsd: st.budget.costUsd,
+      });
+    }
+
+    if (input.pauseAfterPrd && decision.next === "pm" && st.prd) {
+      sink.emit({ type: "hitl.awaiting", node: "pm", kind: "prd" });
+      await getStore()
+        .updateRun(input.runId, { status: "awaiting_approval", totals: sink.totals })
+        .catch(() => {});
+      await sink.flush();
+      return { status: "awaiting_approval", files: st.files };
     }
   }
 }
@@ -466,7 +753,7 @@ async function handoff(
     cases: [],
   });
 
-  const deliverable = st.files.length > 0 && !!st.built;
+  const deliverable = completionReady(st);
   await finish(sink, runId, deliverable ? "succeeded" : "failed");
 }
 
