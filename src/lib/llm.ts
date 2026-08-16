@@ -128,7 +128,11 @@ function baseUrl(): string {
 }
 
 function apiKey(): string {
-  return process.env.LLM_API_KEY ?? "local";
+  const key = process.env.LLM_API_KEY?.trim();
+  if (!key || key === "local") {
+    throw new Error("LLM_API_KEY 未配置：请在服务端环境变量中设置有效的模型 API Key");
+  }
+  return key;
 }
 
 export function defaultModel(): string {
@@ -166,6 +170,9 @@ export async function streamChat(
   cb: StreamCallbacks = {},
 ): Promise<StreamResult> {
   const started = Date.now();
+  // 配置错误不是网络抖动，必须在进入重试循环前失败，避免用占位密钥
+  // 连续请求上游，也让工作台能给出准确的服务端配置提示。
+  const authKey = apiKey();
 
   /**
    * 退化响应后的推力提示 —— 追加到最后一次用户消息尾部。
@@ -190,7 +197,7 @@ export async function streamChat(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey()}`,
+        Authorization: `Bearer ${authKey}`,
       },
       body: JSON.stringify({
         model: opts.model,

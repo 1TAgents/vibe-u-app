@@ -16,6 +16,7 @@ const SPIRAL_CHARS = 60; // 思考字符数 > 阈值,触发螺旋
 const originalFetch = globalThis.fetch;
 const originalSpiral = process.env.REASONING_SPIRAL_CHARS;
 const originalBackoff = process.env.LLM_BACKOFF_BASE_MS;
+const originalApiKey = process.env.LLM_API_KEY;
 
 /* ------------------------------ SSE 帧构造 ------------------------------ */
 
@@ -104,11 +105,31 @@ function tearDown() {
   else process.env.REASONING_SPIRAL_CHARS = originalSpiral;
   if (originalBackoff === undefined) delete process.env.LLM_BACKOFF_BASE_MS;
   else process.env.LLM_BACKOFF_BASE_MS = originalBackoff;
+  if (originalApiKey === undefined) delete process.env.LLM_API_KEY;
+  else process.env.LLM_API_KEY = originalApiKey;
 }
 
 (async () => {
   process.env.REASONING_SPIRAL_CHARS = "50";
   process.env.LLM_BACKOFF_BASE_MS = "1";
+  process.env.LLM_API_KEY = "test-only-key";
+
+  // ---- 0. 缺少服务端密钥 → 在 fetch 前立即报配置错误，不拿占位值请求上游 ----
+  {
+    delete process.env.LLM_API_KEY;
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls++;
+      throw new Error("不应发起请求");
+    }) as typeof fetch;
+    await assert.rejects(
+      streamChat({ model: MODEL, messages: messages() }),
+      /LLM_API_KEY 未配置/,
+    );
+    assert.equal(calls, 0, "缺少密钥时不得请求模型网关");
+    process.env.LLM_API_KEY = "test-only-key";
+    console.log("LLM · ✓ 缺少密钥时立即给出服务端配置错误");
+  }
 
   // ---- 1. 螺旋 → 重试 → 成功,废弃耗用累加进最终 usage ----
   {
