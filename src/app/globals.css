@@ -1,0 +1,111 @@
+@import "tailwindcss";
+
+/*
+ * Glassbox 视觉基调:深色控制台。
+ * 这是一个观测工具,不是一个营销页 —— 深色底让流动的思考链、状态灯、
+ * 代码高亮成为画面上唯一的亮部,注意力自然落在"过程"上。
+ */
+
+@theme inline {
+  --color-ink-950: #08090c;
+  --color-ink-900: #0d0f14;
+  --color-ink-850: #12151c;
+  --color-ink-800: #171b24;
+  --color-ink-700: #222834;
+  --color-ink-600: #323a4a;
+  --color-ink-400: #6b7688;
+  --color-ink-300: #97a1b2;
+  --color-ink-200: #c3cad6;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--color-ink-950);
+  color: var(--color-ink-200);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 细滚动条,避免在密集面板里喧宾夺主 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-ink-700) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-ink-700);
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/*
+ * Sandpack 默认按内容高度收缩,嵌进我们的全高布局里会塌成一条。
+ * 这里把它的几层容器统一撑满,预览和代码视图才能占满右侧面板。
+ */
+/* Sandpack 的样式在运行时注入 head,晚于本表,所以这里必须 !important 才压得住 */
+.sp-wrapper,
+.sp-layout,
+.sp-stack,
+.sp-preview-container,
+.sp-code-editor,
+.sp-cm {
+  height: 100% !important;
+}
+.sp-preview-iframe {
+  height: 100% !important;
+  background: #fff;
+}
+.sp-wrapper {
+  --sp-colors-surface1: var(--color-ink-900);
+  --sp-colors-surface2: var(--color-ink-850);
+}
+.sp-file-explorer {
+  height: 100%;
+}
+
+@keyframes glassbox-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.pulse-dot {
+  animation: glassbox-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes glassbox-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+.sweep::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 33%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.09),
+    transparent
+  );
+  animation: glassbox-sweep 1.6s ease-in-out infinite;
+}
