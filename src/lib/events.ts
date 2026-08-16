@@ -7,6 +7,8 @@
  */
 
 export type NodeId =
+  /** 调度器 —— 不干活,只决定下一步派给谁。它的每次决策都要留痕 */
+  | "dispatch"
   | "pm"
   /** 交付后的需求统一先由产品经理判断影响范围 */
   | "intake"
@@ -271,6 +273,53 @@ export type RunEvent =
       openedVia?: string;
       /** 造出记录用的操作描述 */
       createdVia?: string;
+    }
+  /**
+   * 调度决策 —— 下一步派给谁,以及为什么。
+   *
+   * 这是整条事件流里信息量最高的一条。「为什么这个 bug 给了架构师而不是工程师」
+   * 才真正说明协作是不是发生了 —— 藏起来的话,剩下的只是几个角色轮流发言。
+   * 所以 reason 是必填,不是可选的调试信息。
+   */
+  | {
+      type: "dispatch.decided";
+      /** 第几次派单,从 1 开始 */
+      round: number;
+      next: NodeId | "ask_human" | "done";
+      reason: string;
+      /** 给被派到的角色的任务简报 */
+      brief: string;
+      /** 决策当时的预算余额 —— 回放时能看出它是在什么处境下做的判断 */
+      budget: { dispatches: number; maxDispatches: number };
+    }
+  /**
+   * 门的判定结果 —— 产物触发,平台执行,产出事实。
+   *
+   * blocking 的门不过就停下;非 blocking 的只记录。两者都要发这条事件,
+   * 因为调度器下一轮要基于这些事实做决策。
+   */
+  | {
+      type: "gate.verdict";
+      gate: string;
+      trigger: string;
+      ok: boolean;
+      blocking: boolean;
+      /** 给调度器看的事实,人类可读 */
+      facts: string[];
+      durationMs: number;
+    }
+  /**
+   * 预算变化 —— 每次派单后更新。
+   * 单独发一条是为了让回放能画出「余额怎么被烧掉的」。
+   */
+  | {
+      type: "budget.spent";
+      dispatches: number;
+      maxDispatches: number;
+      /** 同一角色连续被派了几次 */
+      sameRoleStreak: number;
+      tokens: number;
+      costUsd: number;
     }
   /**
    * 责任升级 —— 自动修复预算耗尽后交给人。
