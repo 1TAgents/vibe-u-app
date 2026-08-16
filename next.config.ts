@@ -1,5 +1,24 @@
 import type { NextConfig } from "next";
 
+/**
+ * 生成器在 Serverless 函数里运行，需要把构建工具的 JS 包与当前 Linux 平台的
+ * 可选原生包一起追踪。只 externalize 主包但不显式 include 平台包，会在 Vercel
+ * 运行时报 lightningcss.linux-x64-gnu.node / esbuild binary 找不到。
+ */
+const generatedAppRuntime = [
+  "./node_modules/react/**/*",
+  "./node_modules/react-dom/**/*",
+  "./node_modules/scheduler/**/*",
+  "./node_modules/lucide-react/**/*",
+  "./node_modules/esbuild/**/*",
+  "./node_modules/@esbuild/**/*",
+  "./node_modules/@tailwindcss/node/**/*",
+  "./node_modules/@tailwindcss/oxide/**/*",
+  "./node_modules/@tailwindcss/oxide-*/**/*",
+  "./node_modules/lightningcss/**/*",
+  "./node_modules/lightningcss-*/**/*",
+];
+
 const nextConfig: NextConfig = {
   /**
    * 关掉严格模式是被 Sandpack 逼的,不是图省事。
@@ -49,24 +68,10 @@ const nextConfig: NextConfig = {
   // 动态 require.resolve 无法被静态追踪器推断；明确把构建器需要的浏览器运行时
   // 收进 /api/run 函数。scheduler 是 react-dom 的运行时依赖。
   outputFileTracingIncludes: {
-    "/api/run": [
-      "./node_modules/react/**/*",
-      "./node_modules/react-dom/**/*",
-      "./node_modules/scheduler/**/*",
-      "./node_modules/lucide-react/**/*",
-    ],
-    "/api/run/[runId]/chat": [
-      "./node_modules/react/**/*",
-      "./node_modules/react-dom/**/*",
-      "./node_modules/scheduler/**/*",
-      "./node_modules/lucide-react/**/*",
-    ],
-    "/api/run/[runId]/fix": [
-      "./node_modules/react/**/*",
-      "./node_modules/react-dom/**/*",
-      "./node_modules/scheduler/**/*",
-      "./node_modules/lucide-react/**/*",
-    ],
+    "/api/run": generatedAppRuntime,
+    "/api/run/[runId]/chat": generatedAppRuntime,
+    "/api/run/[runId]/resume": generatedAppRuntime,
+    "/a/[runId]": generatedAppRuntime,
   },
 };
 
