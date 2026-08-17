@@ -24,7 +24,11 @@
 
 import { auditTimerSafety } from "./timer-safety";
 import { buildApp, type BuildSuccess } from "./builder";
-import { checkScopedAssertionTargets, checkTargets } from "./targetGate";
+import {
+  checkScopedAssertionTargets,
+  checkTargets,
+  checkValueAssertionTargets,
+} from "./targetGate";
 import { collectDeliveryEvidence, type DeliveryEvidence } from "./delivery";
 import { runTests, type TestReport } from "./testrunner";
 import { mortgageExpectationIssues, stressCovered } from "./stressCoverage";
@@ -157,6 +161,18 @@ const scopedTargetGate: Gate = {
   },
 };
 
+const valueTargetGate: Gate = {
+  id: "value-target-role",
+  name: "字段值断言角色复核",
+  on: "artifact:tests",
+  blocking: true,
+  async run(ctx) {
+    if (!ctx.screen) return { ok: true, facts: [] };
+    const result = checkValueAssertionTargets(ctx.cases ?? [], ctx.screen);
+    return { ok: result.ok, facts: result.problems };
+  },
+};
+
 const actionTargetGate: Gate = {
   id: "action-target",
   name: "交互目标复核",
@@ -239,6 +255,7 @@ export const GATES: readonly Gate[] = Object.freeze([
   staticAuditGate,
   testPlanGate,
   scopedTargetGate,
+  valueTargetGate,
   actionTargetGate,
   calculationConsistencyGate,
   functionalGate,

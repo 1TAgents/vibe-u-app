@@ -484,6 +484,15 @@ function findClickable(doc: Document, label: string): Element | null {
   const partial = candidates.filter((e) => norm(visibleTextOf(e)).includes(target));
   if (partial.length > 0) return deepest(partial);
 
+  // 常见测试表达会把唯一动作写成「动作 + 对象」，例如界面按钮是「保存」，
+  // 用例写「保存收入」。当且仅当目标以一个长度至少 2 的真实按钮名开头、
+  // 且唯一命中时允许别名；不会把「确认通过」反向缩成「通过」。
+  const actionPrefix = candidates.filter((element) => {
+    const text = norm(visibleTextOf(element));
+    return text.length >= 2 && target.length > text.length && target.startsWith(text);
+  });
+  if (actionPrefix.length === 1) return actionPrefix[0];
+
   return findByStableLabel(candidates, target);
 }
 

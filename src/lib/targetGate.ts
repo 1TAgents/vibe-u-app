@@ -71,6 +71,51 @@ export function checkScopedAssertionTargets(
   return { ok: problems.length === 0, problems, actionProblems: [] };
 }
 
+/**
+ * `expectValue` reads a form control's value property. It cannot verify a number
+ * rendered by a div/span. When the screen probe has already observed the exact
+ * target as a region or clickable control (and not as an input), the mismatch is
+ * certain and should be returned to QA before an expensive functional run.
+ *
+ * Unknown targets remain allowed because record-specific inputs may only appear
+ * after the test creates data. As with the other target checks, this gate only
+ * blocks contradictions backed by observed UI evidence.
+ */
+export function checkValueAssertionTargets(
+  cases: TestCase[],
+  screen: { clickables: string[]; inputs: string[]; regions: string[] },
+): TargetGateResult {
+  const normalized = (values: string[]) => new Set(values.map(norm).filter(Boolean));
+  const clickables = normalized(screen.clickables);
+  const inputs = normalized(screen.inputs);
+  const regions = normalized(screen.regions);
+  const problems: string[] = [];
+
+  for (const testCase of cases) {
+    testCase.steps.forEach((step, index) => {
+      if (step.action !== "expectValue") return;
+      const target = norm(step.target);
+      if (!target || inputs.has(target)) return;
+
+      const observedRole = regions.has(target)
+        ? "只读展示区域"
+        : clickables.has(target)
+          ? "可点击控件"
+          : undefined;
+      if (!observedRole) return;
+
+      problems.push(
+        `用例「${testCase.name}」第 ${index + 1} 步使用 expectValue 读取「${step.target}」，` +
+          `但界面探查确认它是${observedRole}，不是 input/textarea/select。` +
+          `请对只读数字使用 expectNumberWithin，对区域文字使用 expectTextWithin；` +
+          `不要让实现把展示内容改成输入框来迎合错误用例。`,
+      );
+    });
+  }
+
+  return { ok: problems.length === 0, problems, actionProblems: [] };
+}
+
 /** 步骤里承载定位语义的字段 */
 function targetOf(step: TestStep): string | undefined {
   return "target" in step ? step.target : undefined;
@@ -112,6 +157,12 @@ export function checkTargets(
   /** 与执行器的宽松区域匹配同一套判据:互为子串即认为指的是同一个东西 */
   const relatedToReal = (w: string) =>
     realNames.some((n) => n.includes(w) || w.includes(n));
+  const executableActionName = (target: string) =>
+    realNames.some(
+      (name) =>
+        name.includes(target) ||
+        (name.length >= 2 && target.length > name.length && target.startsWith(name)),
+    );
   /**
    * 与执行器的区域宽松匹配保持一致：模型常给标题补一个描述性后缀，
    * 「想读书架」「待审批列表」「待办列」都可能指向标题为「想读/待审批/待办」
@@ -141,7 +192,7 @@ export function checkTargets(
       const isAction = step.action === "click" || step.action === "fill";
       if (
         isAction
-          ? realNames.some((name) => name.includes(normalizedTarget))
+          ? executableActionName(normalizedTarget)
           : relatedToReal(normalizedTarget)
       ) return;
       const regionStem = withoutRegionSuffix(normalizedTarget);
@@ -163,7 +214,7 @@ export function checkTargets(
         if (source.includes(nw)) return false;
         if (
           isAction
-            ? realNames.some((name) => name.includes(nw))
+            ? executableActionName(nw)
             : relatedToReal(nw)
         ) return false;
         // 用例填入的值,或值的一部分(实现常只显示名称的一段)

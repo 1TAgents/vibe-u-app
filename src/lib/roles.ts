@@ -564,6 +564,7 @@ export const UI_QUALITY_RULES = `界面质量门(必须全部遵守):
 - 文案像真实产品，不要使用“欢迎使用”“智能赋能”“开启高效之旅”等空泛 AI 文案。
 - 翻转卡片、折叠面板、标签页等「同一区域多状态」组件：所有面/面板都常驻 DOM，必须把**非当前可见**的那一面按当前状态动态设置 aria-hidden="true"，并同步移除当前可见面的 aria-hidden。只靠 CSS 的 backface-visibility/transform 隐藏不够 —— 无障碍与自动化测试都按 aria-hidden 判断可见性。
 - 可点击的交互元素必须用语义元素：<button>、<a> 或带 role="button"（配 tabIndex=0 与 Enter/Space 键盘处理），不要用纯 <div onClick> —— 自动化测试只认语义可点击元素，真实键盘用户也依赖它。整个可点的翻转卡片做成 <button> 包裹内容。
+- **任何可交互控件都不能放在 \`aria-hidden="true"\` 的祖先容器里**。视觉上通过左滑、悬停或展开才出现的编辑/删除按钮，也必须在对应状态下同步移除祖先的 aria-hidden；更稳妥的做法是保留一个始终可聚焦、带「名称 动作」aria-label 的语义按钮。aria-hidden 子树里的 button 对键盘用户、屏幕阅读器和自动化验收都等同于不存在。
 - 计时器(定时器)遵守生命周期规范：只用**单一 interval ref** 保存 setInterval 句柄；暂停/重置/切换模式/组件卸载都要 clearInterval 并清空 ref；useEffect 里要在清理函数(return () => ...)中释放定时器。
 - 切换模式/状态后要启动计时时，**不得依赖刚 setState 的旧闭包** —— setState 是异步的，setMode('rest') 之后再调用 startTimer()，闭包里的 mode 仍是上一次渲染的值。必须**显式把 nextMode 传给启动函数**或通过 ref 读取当前模式，不能在 setInterval 回调里读同一渲染周期的 state 决定走哪个分支。
 - db.insert/update/remove/fetch 等副作用**不得放在 setState 函数式更新器(setXxx((prev) => ...))内部** —— 更新器可能被重复调用(StrictMode 会调用两次)，副作用会重复执行。副作用放在事件处理器或 useEffect 里。

@@ -8,7 +8,11 @@
  */
 
 import assert from "node:assert/strict";
-import { checkScopedAssertionTargets, checkTargets } from "../src/lib/targetGate";
+import {
+  checkScopedAssertionTargets,
+  checkTargets,
+  checkValueAssertionTargets,
+} from "../src/lib/targetGate";
 import type { TestCase } from "../src/lib/testrunner";
 
 let passed = 0;
@@ -51,6 +55,16 @@ function tc(name: string, steps: TestCase["steps"]): TestCase {
   assert.equal(r.actionProblems.length, 1, "虚构点击目标必须成为阻塞事实");
   assert.ok(r.actionProblems[0].includes("确认"));
   ok("把不存在的「确认通过」归为可阻塞的交互目标错误");
+}
+
+{
+  const r = checkTargets(
+    [tc("保存收入", [{ action: "click", target: "保存收入" }] as TestCase["steps"])],
+    src(`<button>保存</button>`),
+    { names: ["保存"] },
+  );
+  assert.deepEqual(r.actionProblems, [], "唯一的动作前缀别名应与执行器保持一致");
+  ok("允许「保存收入」唯一映射到真实「保存」按钮");
 }
 
 {
@@ -232,6 +246,34 @@ function tc(name: string, steps: TestCase["steps"]): TestCase {
   );
   assert.deepEqual(r.problems, [], "尚未出现在探查层的动态记录区域不能被臆断为错误");
   ok("不误拦运行期才出现的动态记录区域");
+}
+
+/* --- expectValue 只能读取真实输入控件 --- */
+{
+  const r = checkValueAssertionTargets(
+    [tc("本月统计", [
+      { action: "expectValue", target: "本月支出 金额", value: "25.50" },
+    ] as TestCase["steps"])],
+    {
+      clickables: ["记一笔"],
+      inputs: ["0.00", "写点什么…"],
+      regions: ["本月结余", "本月支出 金额"],
+    },
+  );
+  assert.equal(r.ok, false);
+  assert.ok(r.problems[0].includes("expectNumberWithin"));
+  ok("拦下用 expectValue 读取只读统计金额的错误计划");
+}
+
+{
+  const r = checkValueAssertionTargets(
+    [tc("编辑金额", [
+      { action: "expectValue", target: "金额", value: "25.50" },
+    ] as TestCase["steps"])],
+    { clickables: ["保存"], inputs: ["金额"], regions: ["流水记录"] },
+  );
+  assert.deepEqual(r.problems, []);
+  ok("真实输入字段的 expectValue 继续放行");
 }
 
 console.log(`\n全部通过:${passed} 项`);
