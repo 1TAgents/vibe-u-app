@@ -86,6 +86,62 @@ export function qaCaseText(qaHistory: QaHistoryLike): string {
     .join("\n");
 }
 
+/**
+ * 房贷场景的确定性算术体检。模型可以写交互步骤，但不能凭感觉编月供数字，
+ * 再让工程师把正确公式改成错误答案。只检查同时给齐四个参数、且声称覆盖月供/
+ * 总利息的用例；金额允许因展示四舍五入产生 0.02 元误差。
+ */
+export function mortgageExpectationIssues(cases: QaCaseLike[]): string[] {
+  const issues: string[] = [];
+  const norm = (value: string) => value.replace(/\s+/g, "");
+
+  for (const testCase of cases) {
+    const steps = testCase.steps ?? [];
+    const fills = new Map<string, number>();
+    for (const step of steps) {
+      if (step.action !== "fill" || !step.target || step.value === undefined) continue;
+      const parsed = Number(String(step.value).replace(/,/g, ""));
+      if (Number.isFinite(parsed)) fills.set(norm(step.target), parsed);
+    }
+
+    const price = fills.get("房屋总价");
+    const downPercent = fills.get("首付比例");
+    const annualRate = fills.get("年利率");
+    const years = fills.get("贷款年限");
+    const claimsMonthly = [testCase.name, ...(testCase.covers ?? [])].some((text) => /月供/.test(text));
+    if (!claimsMonthly || !price || downPercent === undefined || annualRate === undefined || !years) continue;
+    if (downPercent < 0 || downPercent >= 100 || annualRate < 0) continue;
+
+    const principal = price * (1 - downPercent / 100);
+    const months = years * 12;
+    const monthlyRate = annualRate / 100 / 12;
+    const monthly = monthlyRate === 0
+      ? principal / months
+      : principal * monthlyRate * (1 + monthlyRate) ** months / ((1 + monthlyRate) ** months - 1);
+    const interest = monthly * months - principal;
+    const expectedNumbers = steps
+      .filter((step) => step.action === "expectText" || step.action === "expectTextWithin")
+      .flatMap((step) => [...(step.text ?? "").matchAll(/[¥￥]\s*([\d,]+(?:\.\d+)?)/g)])
+      .map((match) => Number(match[1].replace(/,/g, "")))
+      .filter(Number.isFinite);
+    const near = (value: number) => expectedNumbers.some((candidate) => Math.abs(candidate - value) <= 0.02);
+
+    if (!near(monthly)) {
+      issues.push(
+        `房贷算术预期不一致:用例「${testCase.name}」按等额本息复算月供应为 ¥${monthly.toFixed(2)}`,
+      );
+    }
+    const claimsInterest = [testCase.name, ...(testCase.covers ?? [])].some((text) => /利息/.test(text));
+    if (claimsInterest && !near(interest)) {
+      issues.push(
+        `房贷算术预期不一致:用例「${testCase.name}」按等额本息复算总利息应为 ¥${interest.toFixed(2)}`,
+      );
+    }
+  }
+
+  return issues;
+}
+
 const normalizedFeatureName = (value: string) => value.replace(/\s+/g, "").toLocaleLowerCase();
 
 /**

@@ -249,21 +249,28 @@ async function execStep(
 
     case "expectTextWithin": {
       const expected = normalizeText(step.text);
-      const region = findRegion(doc, step.target);
-      if (!region) return `找不到区域「${step.target}」`;
+      let region: HTMLElement | null = null;
       // 两边都要归一化。只归一化期望值、拿原始页面文字去比,
       // 任何带空格的断言(「年假 · 张三」「1 票」「300 kg」)都必然失败 ——
       // 而这类文案在真实产品里到处都是。
-      const found = await waitFor(() =>
-        normalizeText(visibleTextOf(region)).includes(expected),
-      );
+      // 区域本身也可能在保存后的 loading 态短暂卸载，必须和区域内文字一起重试；
+      // 只等待文字、却在第一帧立即查区域，会把正常异步重渲染误报成「找不到区域」。
+      const found = await waitFor(() => {
+        region = findRegion(doc, step.target);
+        return !!region && normalizeText(visibleTextOf(region)).includes(expected);
+      });
+      if (!region) return `找不到区域「${step.target}」`;
       return found ? null : `区域「${step.target}」里没有出现「${step.text}」`;
     }
 
     case "expectNoTextWithin": {
+      let region: HTMLElement | null = null;
+      const appeared = await waitFor(() => {
+        region = findRegion(doc, step.target);
+        return !!region;
+      });
+      if (!appeared || !region) return `找不到区域「${step.target}」`;
       await sleep(SETTLE_MS);
-      const region = findRegion(doc, step.target);
-      if (!region) return `找不到区域「${step.target}」`;
       // 同样必须两边归一化,而且这一侧更危险:漏了归一化会让文字**永远找不到**,
       // 于是这条否定断言恒成立、静默通过 —— 假阳性比失败难查得多。
       return normalizeText(visibleTextOf(region)).includes(normalizeText(step.text))
@@ -290,11 +297,12 @@ async function execStep(
       if (!Number.isFinite(expected)) {
         return `expectNumberWithin 的 value 必须是数字:「${step.value}」`;
       }
-      const region = findRegion(doc, step.target);
+      let region: HTMLElement | null = null;
+      const ok = await waitFor(() => {
+        region = findRegion(doc, step.target);
+        return !!region && extractNumbers(visibleTextOf(region)).some((n) => n === expected);
+      });
       if (!region) return `找不到区域「${step.target}」`;
-      const ok = await waitFor(() =>
-        extractNumbers(visibleTextOf(region)).some((n) => n === expected),
-      );
       return ok ? null : `区域「${step.target}」里没有数值等于「${step.value}」`;
     }
 
@@ -396,6 +404,19 @@ function findElement(doc: Document, label: string): HTMLElement | null {
  */
 function attrMatches(el: HTMLElement, attr: string, expected: string): boolean {
   if (attr.toLowerCase() === "class") return el.classList.contains(expected);
+  // disabled / checked / required 等 HTML 布尔属性以“是否存在”表达真假，
+  // 合法 DOM 通常序列化成 disabled=""，不是 disabled="true"。
+  // 测试计划用 value="true" 表达布尔语义时，应按属性存在判断。
+  const booleanAttrs = new Set([
+    "allowfullscreen", "async", "autofocus", "autoplay", "checked", "controls",
+    "default", "defer", "disabled", "formnovalidate", "hidden", "inert", "ismap",
+    "itemscope", "loop", "multiple", "muted", "nomodule", "novalidate", "open",
+    "playsinline", "readonly", "required", "reversed", "selected",
+  ]);
+  if (booleanAttrs.has(attr.toLowerCase())) {
+    if (expected === "true") return el.hasAttribute(attr);
+    if (expected === "false") return !el.hasAttribute(attr);
+  }
   return (el.getAttribute(attr) ?? "") === expected;
 }
 
@@ -415,11 +436,12 @@ function fieldValue(el: HTMLElement): string {
  * 否则「包含某文字」会一路命中到最外层容器,点了等于没点。
  */
 function findClickable(doc: Document, label: string): Element | null {
-  const candidates = [
+  const allCandidates = [
     ...doc.querySelectorAll<HTMLElement>(
       'button, a, [role="button"], input[type="submit"], input[type="checkbox"], label, li, div[onclick], span[onclick]',
     ),
   ].filter(isVisible);
+  const candidates = preferActiveDialog(doc, allCandidates);
 
   const norm = (s: string) => s.replace(/\s+/g, "").trim();
   const target = norm(label);
@@ -530,9 +552,10 @@ function findScopedAction(
 
 /** 按 placeholder / aria-label / 关联 label 找输入框 */
 function findInput(doc: Document, label: string): HTMLElement | null {
-  const inputs = [
+  const allInputs = [
     ...doc.querySelectorAll<HTMLElement>("input, textarea, select"),
   ].filter(isVisible);
+  const inputs = preferActiveDialog(doc, allInputs);
   if (inputs.length === 0) return null;
 
   const norm = (s: string) => s.replace(/\s+/g, "").trim();
@@ -565,6 +588,24 @@ function findInput(doc: Document, label: string): HTMLElement | null {
 
   // 只有一个输入框时不必纠结,就是它
   return inputs.length === 1 ? inputs[0] : null;
+}
+
+/**
+ * 可见模态框存在时，交互只能发生在最上层模态框里。
+ *
+ * 背景页面仍留在 DOM，jsdom 又没有真实的遮罩命中测试；若背景和弹窗恰好都有
+ * 「添加商品」按钮或相同 placeholder，按 DOM 顺序会点到/填到遮罩后面的控件，
+ * 表现成提交无效。真实浏览器用户无法点击遮罩后的页面，所以执行器也必须遵循
+ * 同一交互边界。多个模态框并存时取 DOM 最后的一个，等价于常见的最高层弹窗。
+ */
+function preferActiveDialog<T extends HTMLElement>(doc: Document, elements: T[]): T[] {
+  const dialogs = [
+    ...doc.querySelectorAll<HTMLElement>('dialog[open], [role="dialog"][aria-modal="true"]'),
+  ].filter(isVisible);
+  const active = dialogs.at(-1);
+  if (!active) return elements;
+  const scoped = elements.filter((el) => active.contains(el));
+  return scoped.length > 0 ? scoped : elements;
 }
 
 /**
@@ -709,14 +750,30 @@ function findRegionLoosely(
  * 表现就是「填了但没生效」,会被误判成应用的 bug。
  */
 function setNativeValue(win: DOMWindow, el: HTMLElement, value: string) {
+  // 高层验收描述使用用户看见的 option 文案，而不是实现内部 id/value。
+  // 若传入值不是现有 option.value，就尝试按可见标签精确选择。
+  const effectiveValue = el.tagName === "SELECT"
+    ? selectValueForLabel(el as HTMLSelectElement, value)
+    : value;
   const proto =
     el.tagName === "TEXTAREA"
       ? win.HTMLTextAreaElement.prototype
-      : win.HTMLInputElement.prototype;
+      : el.tagName === "SELECT"
+        ? win.HTMLSelectElement.prototype
+        : win.HTMLInputElement.prototype;
   const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
-  setter?.call(el, value);
+  setter?.call(el, effectiveValue);
   el.dispatchEvent(new win.Event("input", { bubbles: true }));
   el.dispatchEvent(new win.Event("change", { bubbles: true }));
+}
+
+function selectValueForLabel(select: HTMLSelectElement, requested: string): string {
+  if ([...select.options].some((option) => option.value === requested)) return requested;
+  const normalized = normalizeText(requested);
+  const byLabel = [...select.options].find(
+    (option) => normalizeText(option.textContent ?? option.label) === normalized,
+  );
+  return byLabel?.value ?? requested;
 }
 
 function deepest(els: HTMLElement[]): HTMLElement {
@@ -741,6 +798,10 @@ function depth(el: Element): number {
  */
 export function isVisible(el: HTMLElement): boolean {
   for (let cur: HTMLElement | null = el; cur; cur = cur.parentElement) {
+    // 脚本/样式/模板源码不是用户可见内容。jsdom 没有为这些元素提供可靠的
+    // 布局可见性，若不显式排除，expectText 会从 bundle 源码字符串里假通过，
+    // expectNoText 也会因为脚本里写过某句文案而假失败。
+    if (["SCRIPT", "STYLE", "TEMPLATE", "NOSCRIPT"].includes(cur.tagName)) return false;
     if (cur.hasAttribute("hidden")) return false;
     if (cur.hasAttribute("inert")) return false;
     const aria = cur.getAttribute("aria-hidden");

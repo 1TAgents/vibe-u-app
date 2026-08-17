@@ -52,7 +52,12 @@ export interface ChangeAssessment {
  * QA 失败根因的归因类别 —— Ida 决定谁该为这轮失败负责。
  * 这是产品规则:Tess 只报告与复测,不承担需求路由权;路由权在 Ida。
  */
-export type QaCause = "visual" | "implementation" | "architecture" | "requirements";
+export type QaCause =
+  | "test-plan"
+  | "visual"
+  | "implementation"
+  | "architecture"
+  | "requirements";
 
 /** Ida 对一轮 QA 失败报告的归因与分配结论。 */
 export interface QaTriage {
@@ -68,7 +73,7 @@ export interface QaTriage {
   /** 该归因覆盖的失败用例 */
   cases: string[];
   /** 确定性路由出的第一责任人 */
-  assignee: "emma" | "maya" | "bob" | "alex";
+  assignee: "tess" | "emma" | "maya" | "bob" | "alex";
   /** 本轮需要执行的角色节点序列(去重、按协作顺序) */
   route: NodeId[];
 }

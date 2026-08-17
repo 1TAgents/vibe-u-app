@@ -28,6 +28,7 @@ const COLUMNS = ["待办任务", "进行中任务", "已完成任务"];
 function App() {
   const [tasks, setTasks] = useState([]);
   const [name, setName] = useState("");
+  const [reportReady, setReportReady] = useState(true);
   const add = () => {
     if (!name.trim()) return;
     setTasks((prev) => [...prev, { id: Date.now(), name: name.trim(), col: "待办任务" }]);
@@ -41,6 +42,16 @@ function App() {
         return { ...t, col: COLUMNS[Math.min(COLUMNS.length - 1, i + 1)] };
       }),
     );
+  const reloadReport = () => {
+    setReportReady(false);
+    let frames = 0;
+    const next = () => {
+      frames += 1;
+      if (frames >= 55) setReportReady(true);
+      else requestAnimationFrame(next);
+    };
+    requestAnimationFrame(next);
+  };
   return (
     <div>
       <div>
@@ -64,6 +75,8 @@ function App() {
           </ul>
         </section>
       ))}
+      <button onClick={reloadReport}>刷新报表</button>
+      {reportReady && <section aria-label="本月结余"><span>结余 70</span></section>}
     </div>
   );
 }
@@ -116,6 +129,13 @@ const cases: TestCase[] = [
     name: "不存在的列区域时报找不到区域",
     steps: [{ action: "expectTextWithin", target: "不存在的列", text: "x" }],
   },
+  {
+    name: "保存后区域短暂卸载时等待重新出现",
+    steps: [
+      { action: "click", target: "刷新报表" },
+      { action: "expectTextWithin", target: "本月结余", text: "结余 70" },
+    ],
+  },
 ];
 
 async function main() {
@@ -139,7 +159,12 @@ async function main() {
   assert.match(noRegion.message, /找不到区域「不存在的列」/);
   console.log("Within · ✓ 目标区域不存在时报「找不到区域」");
 
-  assert.equal(report.passed, 1, JSON.stringify(report.failures, null, 2));
+  // 4) 异步界面在操作后短暂卸载区域，断言应等待区域与内容一起回来
+  const delayed = report.failures.find((f) => f.case.includes("区域短暂卸载"));
+  assert.ok(!delayed, `异步区域重新出现后应通过:${JSON.stringify(delayed)}`);
+  console.log("Within · ✓ 区域短暂卸载时会等待重新出现");
+
+  assert.equal(report.passed, 2, JSON.stringify(report.failures, null, 2));
 }
 
 main().catch((err) => {

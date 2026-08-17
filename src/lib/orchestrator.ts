@@ -32,12 +32,15 @@ import {
   TestCaseSchema,
   VisualDesignSchema,
   AcceptanceSchema,
+  QaTriageSchema,
   architectPrompt,
+  buildQaTriage,
   engineerPrompt,
   fixPrompt,
   parseFileBlocks,
   pmPrompt,
   qaPrompt,
+  qaTriagePrompt,
   visualDesignerPrompt,
   acceptancePrompt,
   type Design,
@@ -61,7 +64,7 @@ import { collectScreenInventory, type ScreenInventory } from "./delivery";
 import { EventSink } from "./sink";
 import { RUNTIME_PATHS, withRuntimeFiles } from "./runtime-files";
 import { getStore } from "./store";
-import type { GeneratedFile, NodeId } from "./events";
+import type { GeneratedFile, NodeId, QaCause, QaTriage } from "./events";
 import type { TestCase } from "./testrunner";
 
 /** 一次 run 的全部工作状态。由事件流拥有,这里只是循环内的镜像 */
@@ -90,6 +93,12 @@ interface WorkState {
   accepted: boolean;
   /** 最近一次功能验收是否针对当前代码通过。 */
   qaPassed: boolean;
+  /** Tess 失败后由 Ida 给出的强制下一责任人；Piper 不得覆盖产品负责人的分配。 */
+  requiredDispatches?: Dispatch[];
+  /** 同一问题修后仍失败时，提醒 Ida 不要机械重复上一层归因。 */
+  lastQaCause?: QaCause;
+  /** 与 lastQaCause 配套；只有失败事实完全相同才算“同一问题”。 */
+  lastQaFailureSignature?: string;
 }
 
 export interface RunResult {
@@ -270,6 +279,55 @@ function completionReady(st: WorkState): boolean {
   return completionIssues(st).length === 0;
 }
 
+/** Ida 的责任分配翻译成当前动态调度器能执行的角色。 */
+export function qaTriageDispatch(triage: QaTriage): Dispatch {
+  const routes: Record<QaTriage["assignee"], Dispatch> = {
+    tess: {
+      next: "qa",
+      reason: `Ida 判断 QA 测试计划本身有误：${triage.reason}`,
+      brief: "严格依据 PRD 与真实页面重写验收用例，不修改产品实现来迎合错误断言。",
+    },
+    emma: {
+      next: "pm",
+      reason: `Ida 将 QA 失败归因为需求口径：${triage.reason}`,
+      brief: "根据失败用例修订 PRD 与验收口径，保持原需求范围清晰可执行。",
+    },
+    maya: {
+      next: "designer",
+      reason: `Ida 将 QA 失败归因为视觉与交互：${triage.reason}`,
+      brief: "根据失败证据修订视觉与交互方案，明确控件、状态和信息层级。",
+    },
+    bob: {
+      next: "architect",
+      reason: `Ida 将 QA 失败归因为架构设计：${triage.reason}`,
+      brief: "根据失败证据修订数据模型、状态流转或页面结构。",
+    },
+    alex: {
+      next: "engineer",
+      reason: `Ida 将 QA 失败归因为实现缺陷：${triage.reason}`,
+      brief: "根据失败用例与步骤修复实现，保留无关功能并重新构建。",
+    },
+  };
+  return routes[triage.assignee];
+}
+
+/**
+ * 上游责任人修订产物后必须由 Cody 把变化落到代码；只执行第一站会让 Piper
+ * 继续盯着旧 QA 事实，把同一任务再次派给上游角色。
+ */
+export function qaTriageRoute(triage: QaTriage): Dispatch[] {
+  const first = qaTriageDispatch(triage);
+  if (first.next === "engineer" || first.next === "qa") return [first];
+  return [
+    first,
+    {
+      next: "engineer",
+      reason: `Ida 的上游修订已完成，现在由 Cody 将其落实到代码：${triage.reason}`,
+      brief: "依据刚更新的 PRD、视觉或架构产物修改实现，重新构建并保留无关功能。",
+    },
+  ];
+}
+
 /* --------------------------- 五个角色干活 --------------------------- */
 
 async function runRole(
@@ -446,9 +504,73 @@ async function runRole(
     st.cases = plan.cases as TestCase[];
     sink.emit({ type: "artifact", kind: "tests", data: st.cases });
 
-    await fireGates(sink, st, "artifact:tests", runId);
-    // 计划体检是非阻塞的,不管过没过都直接执行
-    await fireGates(sink, st, "state:code-ready", runId);
+    const planCheck = await fireGates(sink, st, "artifact:tests", runId);
+    // 通用计划体检仍是非阻塞的；但确定性计算复核属于硬门。数学预期错了时
+    // 直接退回 Tess，不能执行一份错误用例后再让 Cody 把正确公式改错。
+    if (!planCheck.passed) {
+      st.facts = planCheck.facts;
+      st.gatesPassed = false;
+      st.requiredDispatches = [{
+        next: "qa",
+        reason: `测试计划的确定性复核未通过：${planCheck.facts.join("；")}`,
+        brief: "重新独立验算输入与期望结果，修正测试计划；不要修改产品代码。",
+      }];
+      return;
+    }
+    // 其余计划警告不阻塞,直接执行
+    const functional = await fireGates(sink, st, "state:code-ready", runId);
+    if (st.qaPassed) {
+      st.requiredDispatches = undefined;
+      st.lastQaCause = undefined;
+      st.lastQaFailureSignature = undefined;
+      return;
+    }
+
+    // 组织闭环：Tess 只报告失败；Ida 负责判断属于需求、视觉、架构还是实现，
+    // 再由确定性映射分配责任人。不能让 Piper 在 QA 与工程师之间反复猜。
+    if (st.design && functional.facts.length > 0) {
+      try {
+        const currentFailureSignature = failureSignature(functional.facts);
+        const triagePrompt = qaTriagePrompt({
+          prd: st.prd,
+          design: st.design,
+          visual: st.visual,
+          failures: functional.facts,
+          previousCause:
+            st.lastQaFailureSignature === currentFailureSignature
+              ? st.lastQaCause
+              : undefined,
+        });
+        const raw = await callAgentParsed(
+          sink,
+          {
+            node: "triage",
+            model,
+            system: triagePrompt.system,
+            user: triagePrompt.user,
+            maxTokens: 3000,
+            jsonMode: true,
+          },
+          (value) => QaTriageSchema.parse(extractJson(value)),
+          signal,
+        );
+        const triage = buildQaTriage({
+          cause: raw.cause,
+          reason: raw.reason,
+          cases: functional.facts,
+        });
+        st.lastQaCause = triage.cause;
+        st.lastQaFailureSignature = currentFailureSignature;
+        st.requiredDispatches = qaTriageRoute(triage);
+        sink.emit({ type: "qa.triage", attempt: st.budget.dispatches, triage });
+        st.facts = [
+          ...functional.facts,
+          `Ida 已归因并分配给 ${triage.assignee}：${triage.reason}`,
+        ];
+      } catch {
+        // 归因模型失败不能吞掉 Tess 的原始报告；下一轮仍可由 Piper 按事实处理。
+      }
+    }
     return;
   }
 
@@ -592,20 +714,28 @@ export async function runLoop(
     }
 
     // ---- 问 Piper:下一步派给谁 ----
-    const dp = dispatchPrompt(viewOf(st, budgetWarning(st)));
-    const decision = await callAgentParsed<Dispatch>(
-      sink,
-      {
-        node: "dispatch",
-        model: st.model,
-        system: dp.system,
-        user: dp.user,
-        maxTokens: 2000,
-        jsonMode: true,
-      },
-      (raw) => DispatchSchema.parse(extractJson(raw)),
-      signal,
-    );
+    let decision: Dispatch;
+    if (st.requiredDispatches?.length) {
+      // Ida 已经完成归因与分配，这一轮无需再让 Piper 猜一次；保留同样的
+      // dispatch.decided 审计事件，界面仍能完整说明为什么交给这个角色。
+      decision = st.requiredDispatches.shift()!;
+      if (st.requiredDispatches.length === 0) st.requiredDispatches = undefined;
+    } else {
+      const dp = dispatchPrompt(viewOf(st, budgetWarning(st)));
+      decision = await callAgentParsed<Dispatch>(
+        sink,
+        {
+          node: "dispatch",
+          model: st.model,
+          system: dp.system,
+          user: dp.user,
+          maxTokens: 2000,
+          jsonMode: true,
+        },
+        (raw) => DispatchSchema.parse(extractJson(raw)),
+        signal,
+      );
+    }
     syncUsage(st, sink);
 
     if (decision.next === "done") {

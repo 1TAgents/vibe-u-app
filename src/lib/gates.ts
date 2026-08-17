@@ -27,7 +27,7 @@ import { buildApp, type BuildSuccess } from "./builder";
 import { checkTargets } from "./targetGate";
 import { collectDeliveryEvidence, type DeliveryEvidence } from "./delivery";
 import { runTests, type TestReport } from "./testrunner";
-import { stressCovered } from "./stressCoverage";
+import { mortgageExpectationIssues, stressCovered } from "./stressCoverage";
 import type { GeneratedFile } from "./events";
 import type { Prd } from "./contracts";
 import type { TestCase } from "./testrunner";
@@ -143,6 +143,22 @@ const testPlanGate: Gate = {
   },
 };
 
+/**
+ * 对可以由平台确定性复算的场景做硬门。它不判断文案好坏，只阻止数学上错误的
+ * 期望值进入“失败→改代码”闭环。当前先覆盖本轮反复踩中的等额本息房贷公式。
+ */
+const calculationConsistencyGate: Gate = {
+  id: "calculation-consistency",
+  name: "计算预期复核",
+  on: "artifact:tests",
+  blocking: true,
+  async run(ctx) {
+    if (ctx.scenarioId !== "mortgage") return { ok: true, facts: [] };
+    const facts = mortgageExpectationIssues(ctx.cases ?? []);
+    return { ok: facts.length === 0, facts };
+  },
+};
+
 const functionalGate: Gate = {
   id: "functional",
   name: "功能验收",
@@ -197,6 +213,7 @@ export const GATES: readonly Gate[] = Object.freeze([
   buildGate,
   staticAuditGate,
   testPlanGate,
+  calculationConsistencyGate,
   functionalGate,
   deliveryGate,
 ]);

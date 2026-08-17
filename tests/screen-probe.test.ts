@@ -57,7 +57,30 @@ function app(opts: { persist?: boolean; brokenSubmit?: boolean } = {}) {
 </script></body></html>`;
 }
 
+/** 首屏有多个更短导航项时，「记支出」仍应被优先识别为表单入口。 */
+function ledgerApp() {
+  return `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"></head>
+<body><div id="root">
+  <button>首页</button><button>统计</button><button>流水</button><button>设置</button>
+  <button id="expense">记支出</button>
+  <div id="form" style="display:none">
+    <input placeholder="金额"><button>保存支出</button>
+  </div>
+</div><script>
+  document.getElementById("expense").onclick = () => {
+    document.getElementById("form").style.display = "block";
+  };
+</script></body></html>`;
+}
+
 async function main() {
+  {
+    const inv = await collectScreenInventory(ledgerApp(), "ledger-probe");
+    assert.equal(inv.afterOpen?.via, "记支出");
+    assert.ok(inv.afterOpen?.inputs.includes("金额"));
+    ok("多导航首屏仍优先打开记支出表单");
+  }
+
   /* --- 交互后面的字段能被挖出来 --- */
   {
     const inv = await collectScreenInventory(app(), "p1");

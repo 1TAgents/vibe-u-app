@@ -59,12 +59,13 @@ export function normalizeChangeAssessment(raw: ChangeAssessment): ChangeAssessme
 /* --------------------- QA 失败归因:Tess → Ida → 分工 --------------------- */
 
 export const QaTriageSchema = z.object({
-  cause: z.enum(["visual", "implementation", "architecture", "requirements"]),
+  cause: z.enum(["test-plan", "visual", "implementation", "architecture", "requirements"]),
   reason: z.string().min(1),
 });
 
 /** 归因类别 → 需要谁修订哪个上游产物 */
 const QA_CAUSE_FLAGS: Record<QaCause, { prdImpact: boolean; visualImpact: boolean; designImpact: boolean }> = {
+  "test-plan": { prdImpact: false, visualImpact: false, designImpact: false },
   visual: { prdImpact: false, visualImpact: true, designImpact: false },
   implementation: { prdImpact: false, visualImpact: false, designImpact: false },
   architecture: { prdImpact: false, visualImpact: false, designImpact: true },
@@ -72,6 +73,7 @@ const QA_CAUSE_FLAGS: Record<QaCause, { prdImpact: boolean; visualImpact: boolea
 };
 
 const QA_CAUSE_ASSIGNEE: Record<QaCause, QaTriage["assignee"]> = {
+  "test-plan": "tess",
   visual: "maya",
   implementation: "alex",
   architecture: "bob",
@@ -79,6 +81,7 @@ const QA_CAUSE_ASSIGNEE: Record<QaCause, QaTriage["assignee"]> = {
 };
 
 const QA_CAUSE_ROUTE: Record<QaCause, NodeId[]> = {
+  "test-plan": ["qa"],
   visual: ["designer", "fix"],
   implementation: ["fix"],
   architecture: ["architectChange", "fix"],
@@ -87,8 +90,9 @@ const QA_CAUSE_ROUTE: Record<QaCause, NodeId[]> = {
 
 /**
  * Ida 的确定性分配 —— 模型只判断根因,路由权在代码手里。
- * 与需求变更路由同理:视觉→Luna,架构→Archie,实现→Cody,需求口径→Ida 自己修订 PRD;
- * 无论谁修订上游,最后都要由 Cody 实现、再由 Tess 回归。
+ * 与需求变更路由同理:测试计划写错→Tess 重写,视觉→Luna,架构→Archie,
+ * 实现→Cody,需求口径→Ida 自己修订 PRD;除测试计划自身错误外,上游修订最终都要
+ * 由 Cody 实现、再由 Tess 回归。
  */
 export function buildQaTriage(attr: {
   cause: QaCause;
@@ -108,7 +112,9 @@ export function buildQaTriage(attr: {
 /** 把归因映射成既有修订 prompt 需要的 ChangeAssessment。 */
 export function triageAssessment(triage: QaTriage): ChangeAssessment {
   const kind =
-    triage.cause === "visual"
+    triage.cause === "test-plan"
+      ? "bug"
+      : triage.cause === "visual"
       ? "visual"
       : triage.cause === "architecture"
         ? "architecture"
@@ -547,6 +553,10 @@ export const UI_QUALITY_RULES = `界面质量门(必须全部遵守):
 - 禁止用 emoji 做 logo、标题装饰、按钮图标或空状态主视觉；使用 lucide-react，图标尺寸与线宽保持一致。
 - 主色只用于主要操作和关键状态。避免整页高饱和蓝紫渐变、发光阴影和无意义的彩色 badge。
 - 表单要有明确 label、合理宽度、聚焦态与错误态；主要按钮和次要按钮必须有清楚层级。
+- **表单错误必须同时可见且可访问**:有校验的 input/textarea/select 在无效时设置
+  \`aria-invalid="true"\`，恢复有效时改回 false 或移除；错误文案用 \`aria-describedby\`
+  关联到对应字段。分类/模式这类按钮组把 \`aria-invalid\` 放在带稳定名称的 fieldset 或
+  \`role="group"\` 容器上，不要只变红却不给语义状态，也不要把整组错误随便挂到某个选项按钮。
 - 列表不能只是重复白色卡片。根据业务选择表格、分组列表、时间线、看板或主从布局，并提供真实的信息密度。
 - 空状态要克制且能引导下一步；不要出现巨大的卡通 emoji 和“暂无数据”孤零零放在中央。
 - 桌面 1280px 与手机 390px 都必须可用；移动端要重排，而不是简单缩小。
@@ -570,6 +580,11 @@ export const UI_QUALITY_RULES = `界面质量门(必须全部遵守):
   \`aria-label="本周训练量"\`、\`aria-label="本月结余"\`)。聚合数字散落在页面上时,
   QA 无法区分「300 出现在页面某处」和「300 出现在本周训练量里」——
   没有区域标签,正确的实现也会被判失败。
+- **有标题的主要业务区域必须是可命名区域**:流水列表、任务列、库存列表、详情面板、
+  筛选结果等只要有可见标题,就用 \`<section aria-label="与标题一致的名称">\`（或等价
+  \`role="region"\` + 可访问名称）包住标题与内容。只在普通 \`<div>\` 里放一个 h2 不够:
+  QA 能看到「本月流水」四个字,却无法证明某条记录真的属于这个区域；屏幕阅读器用户
+  也无法按区域快速导航。区域名必须稳定,不要拼接会变化的条数或金额。
 - **关键只读数值必须有细粒度 aria-label**:每个承载度量数值的展示元素(当前库存、金额、票数、得分等)自身要带 \`aria-label\`(格式「名称 度量」,如 \`aria-label="苹果 当前库存"\`),**不要只靠行容器兜底** —— 同一行常同时显示「当前库存 2」和「阈值 0」,QA 若只能定位整行,就无法把数值断言钉在正确的度量上。数值标签要含度量语义(数量/库存/金额/票数/价格/余额…),让 QA 能精确断言某一个度量。
 - 所有**条件视觉状态**(低库存高亮、告警、选中态、失败态等)必须在承载该状态的行/卡片容器上提供稳定的 \`data-state\` 或 \`data-status\` 语义属性(值用简短稳定的词,如 \`data-state="low"\`),**同时保留视觉 class 做样式**。状态切换时该属性值同步变化。这样 QA 能对「状态出现/消失」做确定性的语义断言,而不是只能猜 class 名。
 - **模式切换对话框的初态必须由触发动作决定**:弹窗/抽屉里的分段切换(如「入库/出库」「收入/支出」「借出/归还」)决定确认按钮的文字与行为,而且对话框**打开时的初始选中模式必须对齐触发它的那个动作** —— 点「苹果 出库」打开就默认选中「出库」、确认按钮直接显示「出库 N 件」;点「苹果 入库」打开默认「入库」。绝不能所有入口都打开成同一个默认模式:用户点了「出库」却看到确认按钮写着「入库 1 件」,交互与直觉相反,QA 也会因为找不到「出库 1 件」而把产品缺陷/测试错误混为一谈。触发模式通过 onClick 参数显式传给弹窗组件(如 onAdjust(product, "out")),不要在弹窗内部硬编码默认值。切换项与确认按钮都要有稳定可点击目标(可见文字或完整 aria-label)。
@@ -589,7 +604,15 @@ export const UI_QUALITY_RULES = `界面质量门(必须全部遵守):
   却只有一句「豆单还在整理中,稍后再来看看」。功能没坏,但用户打开看到这一屏,
   不会觉得这是个做完了的产品。判断标准很简单:**这块内容该由用户填,还是本来就该在那儿?**
   后者就老老实实写够(3-6 条真实、具体、有细节的内容,不要「示例 1/示例 2」)。
-- **模式切换弹窗每次打开都必须是干净初态**:弹窗/抽屉的内部状态(选中模式、数量、错误)不能随组件复用而残留。典型陷阱:点「苹果 出库」打开弹窗,一次出库被业务校验拦截(数量超过当前库存)后弹窗**保持打开不关闭**;用户再点「苹果 入库」时,如果弹窗还是同一个组件实例(父级只是换了个对象,没有先置 null 卸载),内部模式仍停在「出库」,确认按钮就错写成「出库 2 箱」—— 交互完全对不上。弹窗内部状态必须与触发它的 props 同步:要么用 key 强制每次打开重新挂载(如 \`key={\`\${product.id}:\${mode}\`}\`),要么在 product/mode 变化时重置内部 state(useEffect 依赖 product.id / mode),或干脆以 props 为唯一状态源。每个打开都必须是全新的交互,初始模式/数量/错误都不能从上次残留。`;
+- **业务运行所必需的资源目录必须可用**:会议室预订里的房间、排班里的成员/班次、
+  点单里的菜单等如果没有它们主流程就无法开始,而 PRD 又没有“管理员配置资源”的 P0
+  功能,就必须把 3-5 条合理资源作为产品静态配置或首次启动种子数据提供。不能只从 db
+  读取空集合后显示「请联系管理员添加」—— 用户既没有管理员入口,也永远无法使用产品。
+- **模式切换弹窗每次打开都必须是干净初态**:弹窗/抽屉的内部状态(选中模式、数量、错误)不能随组件复用而残留。典型陷阱:点「苹果 出库」打开弹窗,一次出库被业务校验拦截(数量超过当前库存)后弹窗**保持打开不关闭**;用户再点「苹果 入库」时,如果弹窗还是同一个组件实例(父级只是换了个对象,没有先置 null 卸载),内部模式仍停在「出库」,确认按钮就错写成「出库 2 箱」—— 交互完全对不上。弹窗内部状态必须与触发它的 props 同步:要么用 key 强制每次打开重新挂载(如 \`key={\`\${product.id}:\${mode}\`}\`),要么在 product/mode 变化时重置内部 state(useEffect 依赖 product.id / mode),或干脆以 props 为唯一状态源。每个打开都必须是全新的交互,初始模式/数量/错误都不能从上次残留。
+- **成功状态只能有一个所有者**:子组件若用本地 state 渲染「创建成功/复制链接/下一步」,
+  就不能在同一次提交回调里通知父组件立刻切换 view/id 并把子组件卸载 —— 本地成功页会
+  永远不可见。要么成功页由子组件持有,父回调只更新 URL 而不切视图;要么由父组件持有
+  success state 并统一渲染。不要同时写两套状态机互相抢页面。`;
 
 /** 平台注入给生成物的运行时契约,Engineer 必须照此编码 */
 export const RUNTIME_CONTRACT = `
@@ -1060,6 +1083,13 @@ expectText / expectNoText / expectTextWithin 里的 text 只能来自三处:
 你编的「请输入有效的组数」和实现里写的「组数必须大于 0」都合理,但断言会失败,
 而失败原因会被归因成实现有问题 —— 让工程师反复去修一个根本没错的地方。
 
+源码中存在某段文案,只说明它能被定位,**不等于它是 PRD 的验收承诺**。源码文案只能
+作为操作目标,或作为验证 PRD 功能所必需的直接证据。禁止把装饰性进度描述、鼓励语、
+空状态说明等偶然文案写成验收条件(例如 PRD 只要求完成数加一,就断言数值为 1,不要再
+追加「第1个番茄已成熟」)。PRD 没有规定精确措辞时,也不要用「专注中」这类措辞证明
+模式切换;优先验证明确的模式标签、剩余时间和计数。若发现源码与 PRD 对同一行为的定义
+冲突,让用例按 PRD 失败并如实报告,不要自行选择一套新口径。
+
 验证「无效输入被拒绝」时,正确的断言对象不是提示文案,而是**结果没有发生**:
   · 先 fill 无效值 → click 提交 → expectNoText 断言那条无效记录没有出现
   · 若要验错误态本身,用 expectAttribute 断言承载错误样式的语义属性
@@ -1140,7 +1170,15 @@ expectAttribute / expectNoAttribute 断言承载该样式的元素上的**语义
 - 走完整闭环:填内容 → 提交 → 断言它出现了。只断言静态文案没有意义。
 - 断言的文字要用你**自己刚填进去的值**,那是唯一能确定会出现的内容。
 - 应用初始是空的(没有任何数据),不要假设已有数据存在。
+- **每条用例都运行在全新的独立空数据库中**,绝不能继承上一条用例创建的记录。
+  聚合/余额/比例的期望值只能由**当前这一条用例**里实际新增的数值推导，并在输出前
+  重新验算：本用例只记收入 5000、没有支出时，结余只能是 5000，不能写成扣除了
+  上一条用例支出的 4974.50；同一用例也不能同时期待两个互相矛盾的结余终值。
 - 如果某个功能需要先创建数据才能测,就在同一个用例里先创建。
+- **计算器的期望数值必须先独立复算**:月供、利息、BMI、比例、合计等不能凭印象写
+  一个“看起来合理”的数字。把本用例输入代入 PRD/源码规定的公式,核对单位、百分比
+  与期数，再把四舍五入后的结果写进断言。房贷等额本息用月利率=年利率/12、期数=年数×12，
+  贷款本金=总价×(1-首付比例)；若不能确定数值就不要编造精确金额。
 - **用例名必须点名被测的具体功能/字段,不能只写「添加 X 并显示」这类骨架名**。
   PRD 提到筛选/过滤、数组型字段(步骤、配料、成员、标签…)、计算/聚合、
   状态流转或日期逻辑时,至少给其中一个功能写一条直接操作它的用例(如
@@ -1222,14 +1260,24 @@ export function qaTriagePrompt(input: {
 }) {
   return {
     system: `你是 Ida,产品负责人。测试工程师 Tess 刚把验收报告交到你手上,你的职责是**归因与分配**:
-判断失败最可能出在哪一层,再由团队分工处理。你不写代码,也不修改验收用例 ——
-测试边界只能由你修订 PRD 来调整。
+判断失败最可能出在哪一层,再由团队分工处理。你不写代码;如果测试计划超出产品承诺,
+应退回 Tess 重写,不能修改 PRD 或产品去迎合错误用例。
 
 归因标准(从上到下判断,别把每个失败都归给工程师):
+- test-plan:Tess 的步骤、目标或断言超出 PRD,臆造文案/状态,或没有按真实页面操作 → Tess 重写用例
 - requirements:验收口径含糊、需求冲突、或 PRD 承诺了当前架构无法实现的交互 → 你修订 PRD
 - architecture:数据模型、跨模块边界、状态流转或技术方案支撑不了该功能 → Archie 修订设计
 - visual:界面视觉、信息层级、交互本身让人无法理解或无从操作 → Luna 修订视觉方案
 - implementation:代码实现、运行时、构建、或与既定设计不一致 → Cody 修代码
+
+不要仅因为视觉方案把操作描述为“图标按钮”，就认定 Tess 写的「记录名 动作」是臆造文案:
+平台要求图标按钮也必须有同格式的 aria-label，这正是合法的可访问名称。同理，用户在用例里
+刚创建了「苹果」，后续目标「苹果 入库」「苹果 当前库存」属于运行时动态名称，不需要逐字
+出现在静态 PRD。只有步骤/断言本身超出功能边界、目标与真实页面锚点明显冲突时才归为
+test-plan。若表单提交后弹窗仍开着、第一条业务结果也没有出现，应优先判断提交/实现/执行器
+问题，不能把后续所有动态目标一起归成测试计划错误。
+计算类失败必须先把用例输入代入既定公式复算。若 QA 的月供、总利息、比例或合计预期
+算错，cause 必须是 test-plan；绝不能把错误数字交给 Cody，要求产品实现去匹配错误答案。
 
 ${input.previousCause ? `注意:同一批用例在上一轮被归因为「${input.previousCause}」并修复后仍然失败 —— 请不要再重复这一归因,说明问题出在更深一层。\n` : ""}
 判断依据只有 Tess 的失败描述与现有产物,不要臆测。`,
@@ -1245,7 +1293,7 @@ ${input.failures.map((f, i) => `${i + 1}. ${f}`).join("\n")}
 
 请输出归因,JSON 结构:
 {
-  "cause": "visual|implementation|architecture|requirements",
+  "cause": "test-plan|visual|implementation|architecture|requirements",
   "reason": "一句话说明为什么是这一层"
 }
 ${PROSE_JSON_RULE}`,
@@ -1267,6 +1315,7 @@ export function qaFixPrompt(input: {
   triage: QaTriage;
 }) {
   const assigneeNote: Record<QaTriage["assignee"], string> = {
+    tess: "Tess(质量工程师)应重写测试计划,本路径不应修改代码",
     emma: "Ida(产品负责人)已修订 PRD",
     maya: "Luna(产品设计师)已修订视觉方案",
     bob: "Archie(系统架构师)已修订设计",

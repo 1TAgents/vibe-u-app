@@ -391,6 +391,7 @@ export function toFeed(state: RunState): FeedItem[] {
 function triageText(t: QaTriage): string {
   const reason = t.reason.replace(/[。；;，,\s]+$/u, "");
   const msg: Record<QaTriage["cause"], string> = {
+    "test-plan": `Tess 的测试计划超出了产品承诺或页面事实 —— ${reason};退回 Tess 重写用例,不改产品迎合错误断言`,
     visual: `Tess 报回的失败是视觉/信息层级问题 —— ${reason};指派 Luna 修订视觉,Cody 实现,交回 Tess 回归`,
     implementation: `Tess 报回的失败是代码实现问题 —— ${reason};指派 Cody 修复,交回 Tess 回归`,
     architecture: `Tess 报回的失败是数据模型/结构问题 —— ${reason};指派 Archie 修订设计,Cody 实现,交回 Tess 回归`,

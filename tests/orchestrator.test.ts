@@ -7,7 +7,13 @@
  */
 
 import assert from "node:assert/strict";
-import { completionIssues, mergeGeneratedFiles } from "../src/lib/orchestrator";
+import {
+  completionIssues,
+  mergeGeneratedFiles,
+  qaTriageDispatch,
+  qaTriageRoute,
+} from "../src/lib/orchestrator";
+import { buildQaTriage } from "../src/lib/roles";
 import { foldEvents } from "../src/lib/fold";
 import { toFeed } from "../src/lib/chatfeed";
 import { changedFilePaths } from "../src/lib/file-diff";
@@ -21,6 +27,29 @@ const built = {
   durationMs: 1,
   warnings: [],
 };
+
+{
+  const expected = {
+    "test-plan": "qa",
+    requirements: "pm",
+    visual: "designer",
+    architecture: "architect",
+    implementation: "engineer",
+  } as const;
+  for (const [cause, next] of Object.entries(expected)) {
+    const triage = buildQaTriage({
+      cause: cause as keyof typeof expected,
+      reason: `${cause} 证据`,
+      cases: ["失败用例"],
+    });
+    assert.equal(qaTriageDispatch(triage).next, next);
+    assert.deepEqual(
+      qaTriageRoute(triage).map((item) => item.next),
+      next === "engineer" || next === "qa" ? [next] : [next, "engineer"],
+    );
+  }
+  console.log("Orchestrator · ✓ Ida 分配包含上游修订→工程落地的完整确定性路线");
+}
 
 {
   const issues = completionIssues({ files: [] });

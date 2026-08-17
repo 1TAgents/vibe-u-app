@@ -205,7 +205,7 @@ export interface ScreenInventory extends ScreenNames {
 }
 
 /** 新建入口 / 提交按钮的识别词 —— 命中不了就跳过该层,不猜也不报错 */
-const CREATE_HINT = /新增|添加|新建|录入|创建|申请|写下|记一笔|\+/;
+const CREATE_HINT = /新增|添加|新建|录入|创建|申请|写下|记一笔|记收入|记支出|记账|\+/;
 const SUBMIT_HINT = /保存|提交|确定|确认|添加|新增|新建|录入|入架|入库|创建|记一笔/;
 
 export async function collectScreenInventory(
