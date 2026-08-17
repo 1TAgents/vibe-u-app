@@ -31,12 +31,6 @@ const ACCENT: Record<string, { text: string; bg: string; ring: string }> = {
 };
 const FALLBACK = ACCENT.sky;
 
-const QUICK = [
-  "主色调换成更沉稳的深蓝",
-  "加一个搜索框，能按关键词过滤",
-  "空状态再友好一点",
-];
-
 export function GroupChat({
   state,
   phase,
@@ -121,23 +115,6 @@ export function GroupChat({
         )}
       </div>
 
-      {!readOnly && ready && state.chat.length === 0 && (
-        <div className="shrink-0 px-3 pb-2">
-          <p className="mb-1.5 text-[10px] text-ink-600">示例需求 · 点击后仍需发送，Piper 会先判断交给谁</p>
-          <div className="flex flex-wrap gap-1.5">
-            {QUICK.map((q) => (
-              <button
-                key={q}
-                onClick={() => setText(q)}
-                className="rounded-full border border-ink-800 px-2 py-1 text-[10px] text-ink-500 transition-colors hover:border-ink-600 hover:text-ink-300"
-              >
-                {q}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
       {!readOnly && (
       <div className="shrink-0 border-t border-ink-800 p-3">
         <div
@@ -161,7 +138,7 @@ export function GroupChat({
               refining
                 ? "请在右侧 PRD 卡中修改或批准需求"
                 : ready
-                  ? "在群里说一句，比如：把主色调换成深蓝"
+                  ? "描述你想调整的内容…"
                   : busy
                     ? "团队正在忙…"
                     : "等应用做好就可以在这里提要求"

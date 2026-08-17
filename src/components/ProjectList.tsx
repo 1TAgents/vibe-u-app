@@ -61,17 +61,17 @@ export function ProjectList({ runs }: { runs: RunSummary[] }) {
   if (runs.length === 0) return null;
 
   return (
-    <section className="mt-12">
+    <section className="mt-16 max-w-4xl border-t border-ink-800/80 pt-7">
       <div className="flex flex-wrap items-center gap-2">
-        <h2 className="text-[11px] uppercase tracking-wide text-ink-500">
-          我的项目
-          <span className="ml-2 font-mono normal-case text-ink-600">
+        <h2 className="text-sm font-medium text-ink-300">
+          最近项目
+          <span className="ml-2 rounded-full bg-ink-850 px-2 py-0.5 font-mono text-[10px] font-normal text-ink-500">
             {shown.length}
             {shown.length !== runs.length && ` / ${runs.length}`}
           </span>
         </h2>
 
-        <div className="ml-auto flex items-center gap-1.5">
+        {runs.length > 3 && <div className="ml-auto flex items-center gap-1.5">
           {FILTERS.map((f) => (
             <button
               key={f.id}
@@ -93,20 +93,20 @@ export function ProjectList({ runs }: { runs: RunSummary[] }) {
             aria-label="搜索项目"
             className="w-28 rounded-lg border border-ink-800 bg-ink-900/60 px-2 py-1 text-[11px] text-ink-200 outline-none placeholder:text-ink-600 focus:border-ink-700"
           />
-        </div>
+        </div>}
       </div>
 
       {shown.length === 0 && (
         <p className="mt-3 text-[12px] text-ink-500">没有符合条件的项目。</p>
       )}
 
-      <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
         {shown.map((r) => {
           const st = STATUS[r.status] ?? STATUS.running;
           return (
             <div
               key={r.id}
-              className="group flex flex-col rounded-xl border border-ink-800 bg-ink-900/40 p-3.5 transition-colors hover:border-ink-700"
+              className="group flex flex-col rounded-xl border border-ink-800 bg-ink-900/45 p-4 transition-all hover:-translate-y-0.5 hover:border-ink-700 hover:bg-ink-900/70"
             >
               <div className="flex items-start gap-2">
                 <span className={cn("mt-1.5 size-1.5 shrink-0 rounded-full", st.dot)} />

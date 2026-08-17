@@ -79,9 +79,17 @@ export function WorkspaceClient() {
     <div className="flex h-screen flex-col bg-ink-950">
       <header className="shrink-0 border-b border-ink-800 bg-ink-900/50 px-4 py-2.5">
         <div className="flex items-center gap-3">
-          <Link href="/" className="shrink-0 text-sm font-medium tracking-tight text-ink-200">
-            <span className="text-emerald-400">VibeU</span>
+          <Link
+            href="/"
+            aria-label="返回首页"
+            title="返回首页，创建或打开其他项目"
+            className="flex shrink-0 items-center gap-1.5 rounded-md border border-ink-700 bg-ink-900 px-2.5 py-1.5 text-xs text-ink-300 transition-colors hover:border-ink-600 hover:bg-ink-800 hover:text-ink-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50"
+          >
+            <BackIcon />
+            <span>返回首页</span>
           </Link>
+          <span className="shrink-0 text-sm font-medium tracking-tight text-emerald-400">VibeU</span>
+          <span aria-hidden="true" className="h-4 w-px shrink-0 bg-ink-800" />
           <span className="min-w-0 flex-1 truncate text-[13px] text-ink-400" title={state.prompt}>
             {state.prompt || prompt || "—"}
           </span>
@@ -260,6 +268,20 @@ function SidebarIcon({ collapsed }: { collapsed: boolean }) {
       <path
         d={collapsed ? "m11 7 3 3-3 3" : "m14 7-3 3 3 3"}
         stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function BackIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className="size-3.5" aria-hidden="true">
+      <path
+        d="m11.5 5-5 5 5 5M7 10h7"
+        stroke="currentColor"
+        strokeWidth="1.7"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
