@@ -1,4 +1,4 @@
-/** 本轮本地验证的 10 个代表性场景，覆盖 VibeU 的主要风险类型。 */
+/** 本地验证的 20 个代表性场景，覆盖 VibeU 的主要风险类型。 */
 export interface Scenario {
   id: string;
   kind: "web-app" | "business-tool" | "calculator" | "landing-page";
@@ -66,6 +66,66 @@ export const SCENARIOS: Scenario[] = [
     kind: "landing-page",
     prompt: "做一个咖啡品牌官网，有品牌介绍、产品列表和留言板",
     stresses: "展示型视觉质量、导航可达性与留言持久化",
+  },
+  {
+    id: "habit",
+    kind: "web-app",
+    prompt: "做一个习惯打卡应用，能新增习惯、每日打卡，并显示连续打卡天数",
+    stresses: "连续天数口径、重复打卡保护与每日状态",
+  },
+  {
+    id: "flashcard",
+    kind: "web-app",
+    prompt: "做一个单词卡应用，能新增卡片、翻面看释义、标记掌握并按状态筛选",
+    stresses: "翻面可见性、掌握状态迁移与筛选结果",
+  },
+  {
+    id: "recipe",
+    kind: "web-app",
+    prompt: "做一个菜谱收藏应用，能记录配料和步骤、添加标签，并按标签筛选",
+    stresses: "结构化配料步骤、标签集合与筛选闭环",
+  },
+  {
+    id: "workout",
+    kind: "web-app",
+    prompt: "做一个健身记录应用，能记录动作、组数和重量，并汇总本周训练量",
+    stresses: "多个数值字段、重量聚合与本周时间口径",
+  },
+  {
+    id: "crm",
+    kind: "business-tool",
+    prompt: "做一个客户跟进 CRM，能新增客户、写跟进备注、查看详情并标记成交",
+    stresses: "列表详情联动、备注保存回显与成交状态",
+  },
+  {
+    id: "leave",
+    kind: "business-tool",
+    prompt: "做一个请假审批应用，能提交请假、审批通过或驳回，并查看审批历史",
+    stresses: "审批状态机、通过驳回分支与历史记录",
+  },
+  {
+    id: "expense",
+    kind: "business-tool",
+    prompt: "做一个报销记录应用，能录入费用、按类别查看，并显示报销合计",
+    stresses: "金额格式化、分类明细与合计一致性",
+  },
+  {
+    id: "sales-dash",
+    kind: "business-tool",
+    prompt: "做一个销售看板，显示月度销售趋势、销售额和 Top 5 商品",
+    stresses: "固定业务数据、月度趋势与 Top 5 排序",
+  },
+  {
+    id: "weekly-report",
+    kind: "business-tool",
+    prompt: "做一个周报生成器，能填写本周完成、下周计划和风险，并复制导出文本",
+    stresses: "多段文本状态、导出内容完整性与剪贴板能力",
+  },
+  {
+    id: "bmi",
+    kind: "calculator",
+    prompt: "做一个 BMI 计算器，输入身高体重，显示 BMI、健康建议和历史记录",
+    stresses: "BMI 公式、数值边界、建议区间与历史追加",
   },
 ];
 

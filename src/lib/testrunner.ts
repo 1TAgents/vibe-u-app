@@ -137,6 +137,17 @@ async function runCase(
     virtualConsole,
     beforeParse(window) {
       installDataShim(window, runId, touchedCollections);
+      // 生成应用常用 Clipboard API 完成“复制/导出”。jsdom 默认没有该 API，
+      // 会让正确的点击处理器直接进入 catch，成功提示永远不出现。宿主只提供
+      // 与浏览器一致的异步成功语义，写入内容留在当前用例窗口内。
+      let clipboardText = "";
+      Object.defineProperty(window.navigator, "clipboard", {
+        configurable: true,
+        value: {
+          writeText: async (value: string) => { clipboardText = String(value); },
+          readText: async () => clipboardText,
+        },
+      });
       // 用可控时钟接管 setInterval/setTimeout:正常操作期间定时器不自动走
       // (确定性),只有 advanceTime 显式推进 —— 否则 25 分钟的倒计时永远等不完。
       installFakeClock(window);

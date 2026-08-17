@@ -8,7 +8,7 @@
  */
 
 import assert from "node:assert/strict";
-import { checkTargets } from "../src/lib/targetGate";
+import { checkScopedAssertionTargets, checkTargets } from "../src/lib/targetGate";
 import type { TestCase } from "../src/lib/testrunner";
 
 let passed = 0;
@@ -40,6 +40,17 @@ function tc(name: string, steps: TestCase["steps"]): TestCase {
   assert.ok(r.problems[0].includes("票数"), "应指出具体是哪个词编造的");
   assert.ok(r.problems[0].includes("第 3 步"), "应定位到具体步骤");
   ok("拦下 poll 的「露营 票数」——「票数」源码里根本没有");
+}
+
+{
+  const r = checkTargets(
+    [tc("审批通过", [{ action: "click", target: "确认通过" }] as TestCase["steps"])],
+    src(`<button>通过</button><button>驳回</button>`),
+    { names: ["通过", "驳回"] },
+  );
+  assert.equal(r.actionProblems.length, 1, "虚构点击目标必须成为阻塞事实");
+  assert.ok(r.actionProblems[0].includes("确认"));
+  ok("把不存在的「确认通过」归为可阻塞的交互目标错误");
 }
 
 {
@@ -184,6 +195,43 @@ function tc(name: string, steps: TestCase["steps"]): TestCase {
   );
   assert.deepEqual(r.problems, [], "运行期计算出来的数值/日期不该判成编造");
   ok("运行期算出来的数值与日期不误拦(bmi/booking 实测形态)");
+}
+
+/* --- scoped 断言的 target 必须真的是内容区域 --- */
+{
+  const r = checkScopedAssertionTargets(
+    [tc("取消标签筛选", [
+      { action: "click", target: "全部" },
+      { action: "expectTextWithin", target: "全部", text: "番茄炒蛋" },
+    ] as TestCase["steps"])],
+    { clickables: ["全部", "家常菜"], inputs: [], regions: ["菜谱列表"] },
+  );
+  assert.equal(r.ok, false);
+  assert.ok(r.problems[0].includes("可点击控件"));
+  ok("拦下把筛选按钮「全部」误当内容区域的 scoped 断言");
+}
+
+{
+  const r = checkScopedAssertionTargets(
+    [tc("列表筛选", [
+      { action: "click", target: "全部" },
+      { action: "expectTextWithin", target: "菜谱列表", text: "番茄炒蛋" },
+    ] as TestCase["steps"])],
+    { clickables: ["全部"], inputs: [], regions: ["菜谱列表"] },
+  );
+  assert.deepEqual(r.problems, []);
+  ok("真实内容区域继续放行");
+}
+
+{
+  const r = checkScopedAssertionTargets(
+    [tc("动态记录区域", [
+      { action: "expectNumberWithin", target: "晨跑 连续天数", value: "1" },
+    ] as TestCase["steps"])],
+    { clickables: ["新增习惯"], inputs: ["习惯名称"], regions: ["习惯列表"] },
+  );
+  assert.deepEqual(r.problems, [], "尚未出现在探查层的动态记录区域不能被臆断为错误");
+  ok("不误拦运行期才出现的动态记录区域");
 }
 
 console.log(`\n全部通过:${passed} 项`);

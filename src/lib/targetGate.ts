@@ -27,6 +27,48 @@ export interface TargetGateResult {
   ok: boolean;
   /** 回喂给 Tess 的证据:哪个用例的哪一步、编造了什么 */
   problems: string[];
+  /** 点击/输入是实际动作，目标确定不存在时必须在执行前阻塞。 */
+  actionProblems: string[];
+}
+
+/**
+ * Scoped assertions must point at a content region, not at an action control.
+ * A recurring recipe failure used `expectTextWithin("全部", ...)`: `全部` was a
+ * filter button, so the assertion could never observe the recipe list. Ida then
+ * misclassified the inevitable failure as an implementation defect and sent the
+ * same correct code back through six repair rounds. This check only rejects an
+ * exact, observed role conflict; dynamic record regions remain allowed.
+ */
+export function checkScopedAssertionTargets(
+  cases: TestCase[],
+  screen: { clickables: string[]; inputs: string[]; regions: string[] },
+): TargetGateResult {
+  const normalized = (values: string[]) => new Set(values.map(norm).filter(Boolean));
+  const clickables = normalized(screen.clickables);
+  const inputs = normalized(screen.inputs);
+  const regions = normalized(screen.regions);
+  const problems: string[] = [];
+
+  for (const testCase of cases) {
+    testCase.steps.forEach((step, index) => {
+      if (
+        step.action !== "expectTextWithin" &&
+        step.action !== "expectNoTextWithin" &&
+        step.action !== "expectNumberWithin"
+      ) return;
+      const target = norm(step.target);
+      if (!target || regions.has(target)) return;
+      const observedRole = clickables.has(target) ? "可点击控件" : inputs.has(target) ? "输入控件" : undefined;
+      if (!observedRole) return;
+      problems.push(
+        `用例「${testCase.name}」第 ${index + 1} 步把「${step.target}」当作内容区域，` +
+          `但界面探查确认它是${observedRole}。请把 scoped 断言的 target 改为真实列表/卡片区域，` +
+          `或改用全页面断言；不要让实现去迎合错误的 DOM 作用域。`,
+      );
+    });
+  }
+
+  return { ok: problems.length === 0, problems, actionProblems: [] };
 }
 
 /** 步骤里承载定位语义的字段 */
@@ -78,6 +120,7 @@ export function checkTargets(
   const withoutRegionSuffix = (value: string) =>
     value.replace(/(?:任务)?(?:书架|列表|区域|标签|分组|栏目|清单|列)$/u, "");
   const problems: string[] = [];
+  const actionProblems: string[] = [];
 
   for (const tc of cases) {
     // 本用例自己填过的值属于运行期数据,源码里当然没有
@@ -93,7 +136,14 @@ export function checkTargets(
       // 整串就能落到某个真实控件上时直接放行 —— 「待办列」对「待办」区域、
       // 「张三 编辑」对那一行的编辑按钮,执行器都认,门就不该有意见。
       const normalizedTarget = norm(target);
-      if (relatedToReal(normalizedTarget)) return;
+      // 点击/输入的执行器只接受“真实控件名包含目标”，不会把真实的「通过」
+      // 反向扩写成测试臆造的「确认通过」。区域断言仍保留互为子串的宽松匹配。
+      const isAction = step.action === "click" || step.action === "fill";
+      if (
+        isAction
+          ? realNames.some((name) => name.includes(normalizedTarget))
+          : relatedToReal(normalizedTarget)
+      ) return;
       const regionStem = withoutRegionSuffix(normalizedTarget);
       if (
         regionStem &&
@@ -111,7 +161,11 @@ export function checkTargets(
         // 对这类 token 没有判断力,就不该对它们表态。
         if (/^[\d.,:/\-+%¥$€]+$/.test(nw)) return false;
         if (source.includes(nw)) return false;
-        if (relatedToReal(nw)) return false;
+        if (
+          isAction
+            ? realNames.some((name) => name.includes(nw))
+            : relatedToReal(nw)
+        ) return false;
         // 用例填入的值,或值的一部分(实现常只显示名称的一段)
         for (const v of entered) {
           if (v.includes(nw) || nw.includes(v)) return false;
@@ -120,15 +174,16 @@ export function checkTargets(
       });
 
       if (invented.length > 0) {
-        problems.push(
+        const problem =
           `用例「${tc.name}」第 ${i + 1} 步的 target「${target}」里,` +
             `「${invented.join("、")}」既不在源码里,也不在应用真实渲染出来的控件里,` +
             `更不是本用例填入的数据 —— 执行时定位不到。` +
-            `请改用界面上真实存在的可见文字或 aria-label。`,
-        );
+            `请改用界面上真实存在的可见文字或 aria-label。`;
+        problems.push(problem);
+        if (step.action === "click" || step.action === "fill") actionProblems.push(problem);
       }
     });
   }
 
-  return { ok: problems.length === 0, problems };
+  return { ok: problems.length === 0, problems, actionProblems };
 }

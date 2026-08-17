@@ -16,7 +16,11 @@ import { SCENARIOS, type Scenario } from "./scenarios";
 const BASE = process.env.BASE_URL ?? "http://localhost:3002";
 const MODEL = process.env.MODEL ?? "deepseek-v4-flash";
 const VERIFY_RUN_ID = process.env.VERIFY_RUN_ID?.trim();
-const RUN_TIMEOUT_MS = Number(process.env.SCENARIO_TIMEOUT_MS ?? 15 * 60 * 1000);
+// A full company-style loop can legitimately include implementation repair plus
+// one or more QA-plan corrections. Ten minutes cut off a healthy run immediately
+// after its functional tests passed, before acceptance and publication evidence
+// could be recorded, so the local campaign gives the bounded workflow 20 minutes.
+const RUN_TIMEOUT_MS = Number(process.env.SCENARIO_TIMEOUT_MS ?? 20 * 60 * 1000);
 const MOUNT_WAIT_MS = 2600;
 
 type Stage = "generate" | "roles" | "build" | "qa" | "accept" | "coverage" | "preview" | "publish" | "ok";

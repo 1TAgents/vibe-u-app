@@ -48,6 +48,16 @@ const built = {
       next === "engineer" || next === "qa" ? [next] : [next, "engineer"],
     );
   }
+  const qaRetry = buildQaTriage({
+    cause: "test-plan",
+    reason: "不要断言 PRD 未要求的 aria-invalid",
+    cases: ["找不到带 aria-invalid 的输入框"],
+  });
+  assert.match(
+    qaTriageDispatch(qaRetry).brief,
+    /不要断言 PRD 未要求的 aria-invalid/,
+    "QA 返工 brief 必须携带 Ida 的具体归因，不能只给通用重写指令",
+  );
   console.log("Orchestrator · ✓ Ida 分配包含上游修订→工程落地的完整确定性路线");
 }
 

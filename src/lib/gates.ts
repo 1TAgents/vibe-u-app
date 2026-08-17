@@ -24,7 +24,7 @@
 
 import { auditTimerSafety } from "./timer-safety";
 import { buildApp, type BuildSuccess } from "./builder";
-import { checkTargets } from "./targetGate";
+import { checkScopedAssertionTargets, checkTargets } from "./targetGate";
 import { collectDeliveryEvidence, type DeliveryEvidence } from "./delivery";
 import { runTests, type TestReport } from "./testrunner";
 import { mortgageExpectationIssues, stressCovered } from "./stressCoverage";
@@ -56,6 +56,8 @@ export interface GateContext {
   scenarioId?: string;
   /** 界面探查采到的真实控件名,交给 target 门用 */
   screenNames?: string[];
+  /** 保留控件角色，供确定性检查 scoped 断言是否指向了按钮/输入框。 */
+  screen?: { clickables: string[]; inputs: string[]; regions: string[] };
 }
 
 export interface GateVerdict {
@@ -143,6 +145,29 @@ const testPlanGate: Gate = {
   },
 };
 
+const scopedTargetGate: Gate = {
+  id: "scoped-target-role",
+  name: "区域断言角色复核",
+  on: "artifact:tests",
+  blocking: true,
+  async run(ctx) {
+    if (!ctx.screen) return { ok: true, facts: [] };
+    const result = checkScopedAssertionTargets(ctx.cases ?? [], ctx.screen);
+    return { ok: result.ok, facts: result.problems };
+  },
+};
+
+const actionTargetGate: Gate = {
+  id: "action-target",
+  name: "交互目标复核",
+  on: "artifact:tests",
+  blocking: true,
+  async run(ctx) {
+    const result = checkTargets(ctx.cases ?? [], ctx.files, { names: ctx.screenNames ?? [] });
+    return { ok: result.actionProblems.length === 0, facts: result.actionProblems };
+  },
+};
+
 /**
  * 对可以由平台确定性复算的场景做硬门。它不判断文案好坏，只阻止数学上错误的
  * 期望值进入“失败→改代码”闭环。当前先覆盖本轮反复踩中的等额本息房贷公式。
@@ -213,6 +238,8 @@ export const GATES: readonly Gate[] = Object.freeze([
   buildGate,
   staticAuditGate,
   testPlanGate,
+  scopedTargetGate,
+  actionTargetGate,
   calculationConsistencyGate,
   functionalGate,
   deliveryGate,

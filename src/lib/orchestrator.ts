@@ -146,6 +146,19 @@ async function fireGates(
     html: st.html,
     scenarioId: st.scenarioId,
     screenNames: st.screenNames,
+    screen: st.screen ? {
+      clickables: [
+        ...st.screen.clickables,
+        ...(st.screen.afterOpen?.clickables ?? []),
+        ...(st.screen.afterCreate?.clickables ?? []),
+      ],
+      inputs: [
+        ...st.screen.inputs,
+        ...(st.screen.afterOpen?.inputs ?? []),
+        ...(st.screen.afterCreate?.inputs ?? []),
+      ],
+      regions: st.screen.regions,
+    } : undefined,
   });
 
   for (const v of r.verdicts) {
@@ -285,7 +298,9 @@ export function qaTriageDispatch(triage: QaTriage): Dispatch {
     tess: {
       next: "qa",
       reason: `Ida 判断 QA 测试计划本身有误：${triage.reason}`,
-      brief: "严格依据 PRD 与真实页面重写验收用例，不修改产品实现来迎合错误断言。",
+      brief:
+        `严格依据 PRD 与真实页面重写验收用例，不修改产品实现来迎合错误断言。` +
+        `必须纠正 Ida 指出的具体问题：${triage.reason}`,
     },
     emma: {
       next: "pm",
@@ -481,7 +496,13 @@ async function runRole(
     st.accepted = false;
     st.qaPassed = false;
     const visible = st.screen;
-    const p = qaPrompt(st.prd, authored(st.files), brief, undefined, {
+    // 强制 QA 返工以前只传通用 brief，Ida 的具体归因和失败步骤留在 st.facts
+    // 里却没有进入 Tess 的提示，导致她连续重写出同一个 aria-invalid 错误断言。
+    // 无论由 Piper 还是 Ida 派单，当前事实都必须随任务一起交给 QA。
+    const qaBrief = st.facts.length > 0
+      ? `${brief}\n\n上一轮必须逐条纠正的事实:\n${st.facts.map((fact) => `- ${fact}`).join("\n")}`
+      : brief;
+    const p = qaPrompt(st.prd, authored(st.files), qaBrief, undefined, {
       clickables: [
         ...(visible?.clickables ?? []),
         ...(visible?.afterOpen?.clickables ?? []),
@@ -505,8 +526,8 @@ async function runRole(
     sink.emit({ type: "artifact", kind: "tests", data: st.cases });
 
     const planCheck = await fireGates(sink, st, "artifact:tests", runId);
-    // 通用计划体检仍是非阻塞的；但确定性计算复核属于硬门。数学预期错了时
-    // 直接退回 Tess，不能执行一份错误用例后再让 Cody 把正确公式改错。
+    // 通用文本目标体检仍是非阻塞的；但确定性计算复核和已观测到的控件角色
+    // 冲突属于硬门。错误计划直接退回 Tess，不能先执行再让 Cody 改对的代码。
     if (!planCheck.passed) {
       st.facts = planCheck.facts;
       st.gatesPassed = false;
@@ -594,6 +615,13 @@ async function runRole(
       });
       st.facts = hardIssues;
       st.gatesPassed = false;
+      // 这是平台通过真实 DOM/构建采到的客观代码缺陷，不需要 Piper 再猜责任人，
+      // 更不该反复派给设计。直接交给工程修当前实现，并把完整事实带进提示。
+      st.requiredDispatches = [{
+        next: "engineer",
+        reason: `平台交付门发现当前实现缺陷：${hardIssues.join("；")}`,
+        brief: `按平台客观证据修复当前代码：${hardIssues.join("；")}。保留已通过的功能与视觉方案。`,
+      }];
       return;
     }
     const qaFacts = [...st.facts];
