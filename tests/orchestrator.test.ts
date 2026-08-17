@@ -370,6 +370,37 @@ const built = {
 
 {
   const event = (seq: number, value: RunEvent): Envelope<RunEvent> => ({
+    runId: "triage-feed",
+    seq,
+    ts: 2500 + seq,
+    event: value,
+  });
+  const state = foldEvents([
+    event(0, { type: "run.started", prompt: "测试 QA 归因", model: "m" }),
+    event(1, {
+      type: "qa.triage",
+      attempt: 1,
+      triage: {
+        cause: "test-plan",
+        prdImpact: false,
+        visualImpact: false,
+        designImpact: false,
+        reason: "用例断言超出 PRD",
+        cases: ["空内容不能添加"],
+        assignee: "tess",
+        route: ["qa"],
+      },
+    }),
+  ]);
+  const triage = toFeed(state).find((item) => item.id === "t0");
+  assert.equal(triage?.name, "Piper");
+  assert.equal(triage?.title, "项目经理");
+  assert.match(triage?.text ?? "", /退回 Tess 重写用例/);
+  console.log("Orchestrator · ✓ QA 归因由 Piper 投影，历史 qa.triage 事件不会让工作区崩溃");
+}
+
+{
+  const event = (seq: number, value: RunEvent): Envelope<RunEvent> => ({
     runId: "stopped-change",
     seq,
     ts: 3000 + seq,

@@ -213,9 +213,12 @@ export function toFeed(state: RunState): FeedItem[] {
       seq: q.seq,
       at: q.at,
       kind: "agent",
-      name: ROLES.triage.name,
-      title: ROLES.triage.title,
-      accent: ROLES.triage.accent,
+      // QA 只报告失败，归因和重新派单现在由 Piper 负责。旧实现删除
+      // triage 角色后仍从 ROLES.triage 读取展示信息，只要真实运行出现
+      // qa.triage 事件，整个工作区回放就会在浏览器里崩溃。
+      name: ROLES.dispatch.name,
+      title: ROLES.dispatch.title,
+      accent: ROLES.dispatch.accent,
       text: triageText(q.triage),
       tags: q.triage.cases,
       status: "done",
