@@ -11,7 +11,7 @@
  * 点开才展开;真正的活儿留在右侧产物区。
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { CostBar } from "@/components/CostBar";
@@ -71,10 +71,6 @@ export function WorkspaceClient() {
     }
   }, [state.files.length, version]);
 
-  const shareUrl = useMemo(
-    () => (runId && typeof window !== "undefined" ? `${window.location.origin}/r/${runId}` : ""),
-    [runId],
-  );
   return (
     <div className="flex h-screen flex-col bg-ink-950">
       <header className="shrink-0 border-b border-ink-800 bg-ink-900/50 px-4 py-2.5">
@@ -93,13 +89,6 @@ export function WorkspaceClient() {
           <span className="min-w-0 flex-1 truncate text-[13px] text-ink-400" title={state.prompt}>
             {state.prompt || prompt || "—"}
           </span>
-          {runId && (
-            <CopyLink
-              url={shareUrl}
-              label="复制回放链接"
-              title="复制可审计的团队回放链接"
-            />
-          )}
         </div>
         <div className="mt-2">
           <CostBar state={state} phase={phase} onAbort={abort} />
@@ -303,21 +292,4 @@ function subscribeChatCollapsed(onChange: () => void) {
     window.removeEventListener("storage", onStorage);
     window.removeEventListener(CHAT_COLLAPSED_EVENT, onChange);
   };
-}
-
-function CopyLink({ url, label, title }: { url: string; label: string; title: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <button
-      onClick={() => {
-        void navigator.clipboard.writeText(url);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1600);
-      }}
-      className="shrink-0 rounded border border-ink-700 px-2.5 py-1 text-[11px] text-ink-300 transition-colors hover:border-emerald-500/50 hover:text-emerald-300"
-      title={title}
-    >
-      {copied ? "已复制" : label}
-    </button>
-  );
 }

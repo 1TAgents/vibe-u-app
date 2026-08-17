@@ -288,7 +288,7 @@ export function appHtml(opts: {
   css: string;
   runId: string;
   apiBase: string;
-  /** 嵌在工作区预览里时不显示底部信息条 */
+  /** 是否嵌在工作区预览里 */
   embed?: boolean;
 }): string {
   const config = JSON.stringify({ runId: opts.runId, api: opts.apiBase });
@@ -299,61 +299,14 @@ export function appHtml(opts: {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>${escapeHtml(opts.title)}</title>
 <style>${opts.css}</style>
-<style>
-  body { margin: 0; font-family: system-ui, -apple-system, "PingFang SC", sans-serif; }
-  /*
-   * 出生证明做成右下角的小胶囊,不做通栏横条。
-   *
-   * 原先是钉在底部的整条深色 bar。两个问题,在真实生成物上一眼就能看见:
-   * 固定定位的横条在滚动时会一直压住视口底部的内容(body 的 padding-bottom
-   * 只能保护文档末尾,保护不了滚动途中),而且一条深色通栏压在人家精心配好的
-   * 暖色调品牌页上,是**平台在损害它自己交付的产品**。
-   *
-   * 平台的标识不该比产品本身更显眼。收起来,让位给内容。
-   */
-  #glassbox-bar {
-    position: fixed; right: 12px; bottom: 12px; z-index: 2147483647;
-    display: inline-flex; align-items: center; gap: 8px;
-    max-width: calc(100vw - 24px);
-    padding: 6px 10px; font-size: 11px; line-height: 1.4;
-    border-radius: 999px;
-    background: rgba(13, 15, 20, 0.82);
-    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
-    color: #97a1b2; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    opacity: 0.72; transition: opacity 0.15s ease;
-  }
-  #glassbox-bar:hover { opacity: 1; }
-  #glassbox-bar a { color: #6ee7b7; text-decoration: none; white-space: nowrap; }
-  #glassbox-bar a:hover { text-decoration: underline; }
-  #glassbox-bar button {
-    background: none; border: 0; color: #6b7688; cursor: pointer; font-size: 12px; padding: 0 2px;
-  }
-  /* 窄屏上只留链接,免得一个角标占掉半个屏幕 */
-  @media (max-width: 520px) { #glassbox-bar .gb-note { display: none; } }
-</style>
+<style>body { margin: 0; font-family: system-ui, -apple-system, "PingFang SC", sans-serif; }</style>
 <script>window.__GLASSBOX__ = ${config};</script>
 </head>
 <body>
 <div id="root"></div>
-${opts.embed ? "" : birthCertificate(opts.runId)}
 <script>${opts.js}</script>
 </body>
 </html>`;
-}
-
-/**
- * 「出生证明」信息条。
- *
- * 每个发布出去的应用都附带自己完整的生成过程回放。据我所知没有同类产品这么做,
- * 而它几乎是免费的 —— 事件流本来就在。一个应用不仅能用,还能自证它是怎么来的。
- */
-function birthCertificate(runId: string): string {
-  return `<div id="glassbox-bar">
-  <span class="gb-note">数据真实持久 · 刷新仍在</span>
-  <a href="/r/${encodeURIComponent(runId)}" target="_blank" rel="noopener">看它是怎么被造出来的 ↗</a>
-  <button onclick="document.getElementById('glassbox-bar').remove()" title="收起">✕</button>
-</div>`;
 }
 
 function escapeHtml(s: string): string {
@@ -401,13 +354,13 @@ export function notFoundPage(message: string): string {
  */
 export function buildErrorPage(runId: string, errors: string[]): string {
   const detail = escapeHtml(errors.join("\n\n"));
-  const link = "/r/" + encodeURIComponent(runId);
+  const link = "/workspace?run=" + encodeURIComponent(runId);
   return shell(
     "构建失败 · Glassbox",
     "<h1>这个应用当前无法构建</h1><pre>" +
       detail +
       '</pre><p style="font-size:13px;margin-top:16px"><a href="' +
       link +
-      '">查看它的生成过程 →</a></p>',
+      '">返回项目 →</a></p>',
   );
 }

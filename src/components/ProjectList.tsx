@@ -8,9 +8,9 @@
  * 历次对话迭代、每一次失败与自愈,全都按序追加在同一条流里。
  * 所以 run 就是项目,不需要在它之上再包一层。
  *
- * 同一个项目有两个入口,对应两种意图:
- *   继续改 → 工作区(可编辑,带对话)
- *   回放 → 只读时间轴(给别人看的)
+ * 项目卡只保留「继续改」这个主入口。
+ * 事件流和只读时间轴仍保留在底层，未来用于快照、版本分支与审计能力，
+ * 但当前不作为面向普通使用者的产品入口。
  */
 
 import Link from "next/link";
@@ -46,6 +46,17 @@ const FILTERS = [
 export function ProjectList({ runs }: { runs: RunSummary[] }) {
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["id"]>("usable");
   const [q, setQ] = useState("");
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const copyAppLink = (runId: string) => {
+    const url = `${window.location.origin}/a/${encodeURIComponent(runId)}`;
+    void navigator.clipboard.writeText(url).then(() => {
+      setCopiedId(runId);
+      window.setTimeout(() => {
+        setCopiedId((current) => (current === runId ? null : current));
+      }, 1600);
+    });
+  };
 
   const shown = useMemo(() => {
     const f = FILTERS.find((x) => x.id === filter) ?? FILTERS[1];
@@ -136,12 +147,14 @@ export function ProjectList({ runs }: { runs: RunSummary[] }) {
                 >
                   继续改
                 </Link>
-                <Link
-                  href={`/r/${r.id}`}
-                  className="ml-auto text-[11px] text-ink-500 transition-colors hover:text-ink-300"
+                <button
+                  type="button"
+                  onClick={() => copyAppLink(r.id)}
+                  title="复制这个应用自己的公开链接"
+                  className="ml-auto text-[11px] text-ink-500 transition-colors hover:text-emerald-300"
                 >
-                  回放
-                </Link>
+                  {copiedId === r.id ? "已复制" : "复制应用链接"}
+                </button>
               </div>
             </div>
           );
