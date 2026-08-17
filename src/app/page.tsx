@@ -52,7 +52,7 @@ export default function Home() {
           <span className="h-3.5 w-px bg-ink-700" aria-hidden="true" />
           <span className="text-[11px] tracking-[0.16em] text-ink-500">AI 产品团队</span>
         </div>
-        <h1 className="mt-9 max-w-3xl text-balance text-[clamp(2.25rem,4.5vw,3.5rem)] font-semibold leading-[1.12] tracking-[-0.045em] text-ink-100">
+        <h1 className="mt-9 max-w-4xl text-balance text-[clamp(2.125rem,3.75vw,3rem)] font-semibold leading-[1.14] tracking-[-0.04em] text-ink-100 lg:whitespace-nowrap">
           从一句需求，到一个能用的产品。
         </h1>
         <p className="mt-5 max-w-2xl text-[15px] leading-7 text-ink-400 sm:text-base">
