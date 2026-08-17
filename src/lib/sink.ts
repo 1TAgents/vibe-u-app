@@ -85,6 +85,10 @@ export class EventSink {
     if (this.pending.length === 0) return;
     const batch = this.pending;
     this.pending = [];
-    await getStore().appendEvents(this.runId, batch);
+    const store = getStore();
+    await store.appendEvents(this.runId, batch);
+    // 新运行不再写 token delta，每个批次只有少量业务事件；此时同步累计用量既便宜，
+    // 又能留下 last-progress heartbeat。即使进程意外退出，项目列表也不会长期显示 $0。
+    await store.updateRun(this.runId, { totals: this.usage });
   }
 }

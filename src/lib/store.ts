@@ -432,12 +432,23 @@ export class PgStore implements Store {
 
   async updateRun(id: string, patch: Partial<RunRecord>) {
     await this.ready;
-    const cur = await this.getRun(id);
-    if (!cur) return;
-    const n = { ...cur, ...patch, updatedAt: Date.now() };
+    // 必须在 SQL 层做字段级局部更新，不能先 SELECT 整行再 UPDATE。
+    // EventSink 的 totals heartbeat 与 run.finished 会并发落库；旧实现
+    // 两边都读到 status=running 后，totals 更新会把刚写入的
+    // succeeded 覆盖回 running，进而让已验收应用的公开链接返回 409。
+    const has = (key: keyof RunRecord) => Object.prototype.hasOwnProperty.call(patch, key);
+    const updatedAt = has("updatedAt") ? patch.updatedAt! : Date.now();
     await this.sql`
-      UPDATE runs SET status = ${n.status}, totals = ${JSON.stringify(n.totals)},
-                      label = ${n.label}, updated_at = ${n.updatedAt}
+      UPDATE runs SET
+        prompt = CASE WHEN ${has("prompt")} THEN ${patch.prompt ?? null} ELSE prompt END,
+        model = CASE WHEN ${has("model")} THEN ${patch.model ?? null} ELSE model END,
+        label = CASE WHEN ${has("label")} THEN ${patch.label ?? null} ELSE label END,
+        status = CASE WHEN ${has("status")} THEN ${patch.status ?? null} ELSE status END,
+        totals = CASE WHEN ${has("totals")}
+          THEN ${patch.totals ? JSON.stringify(patch.totals) : null}::jsonb
+          ELSE totals END,
+        created_at = CASE WHEN ${has("createdAt")} THEN ${patch.createdAt ?? null} ELSE created_at END,
+        updated_at = ${updatedAt}
       WHERE id = ${id}`;
   }
 

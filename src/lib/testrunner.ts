@@ -85,6 +85,12 @@ export interface TestReport {
 const SETTLE_MS = 700;
 /** 断言最多重试多久(数据是异步加载的,不能一次没看到就判失败) */
 const ASSERT_TIMEOUT_MS = 4000;
+/**
+ * 交互目标可能依赖首屏异步数据（例如种子分类、远程列表）。
+ * 人在浏览器中会等它出现再点，执行器也应该如此；否则会把正常的加载
+ * 误报成「实现缺少」，并诱导工程师反复修正本来没坏的代码。
+ */
+const INTERACTION_TIMEOUT_MS = 10_000;
 /** 短暂 UI 反馈走真实时间；达到一秒的业务计时才交给 advanceTime。 */
 const FAKE_TIMER_MIN_DELAY_MS = 1000;
 
@@ -217,7 +223,13 @@ async function execStep(
 ): Promise<string | null> {
   switch (step.action) {
     case "click": {
-      const el = findClickable(doc, step.target);
+      let el = findClickable(doc, step.target);
+      if (!el) {
+        await waitFor(() => {
+          el = findClickable(doc, step.target);
+          return !!el;
+        }, INTERACTION_TIMEOUT_MS);
+      }
       if (!el) return `找不到可点击的「${step.target}」`;
       context.lastInteraction = {
         target: normalizeText(step.target),
@@ -231,7 +243,13 @@ async function execStep(
     }
 
     case "fill": {
-      const el = findInput(doc, step.target);
+      let el = findInput(doc, step.target);
+      if (!el) {
+        await waitFor(() => {
+          el = findInput(doc, step.target);
+          return !!el;
+        }, INTERACTION_TIMEOUT_MS);
+      }
       if (!el) return `找不到输入框「${step.target}」`;
       context.lastInteraction = {
         target: normalizeText(step.target),
@@ -850,6 +868,14 @@ export function visibleTextOf(el: Element): string {
     if (node.nodeType === 1) {
       const e = node as HTMLElement;
       if (!isVisible(e)) continue;
+      // 浏览器收起的原生 select 只显示当前选项；未选中的 option 虽然存在于 DOM，
+      // 但不是页面可见文本。把所有 option 都拼进去会让列表筛选的 expectNoText
+      // 永远误报（例如记录已隐藏，但分类下拉框里仍有「餐饮」选项）。
+      if (e.tagName === "SELECT") {
+        const selected = [...(e as HTMLSelectElement).options].filter((option) => option.selected);
+        for (let i = selected.length - 1; i >= 0; i--) stack.push(selected[i]);
+        continue;
+      }
       for (let i = e.childNodes.length - 1; i >= 0; i--) stack.push(e.childNodes[i]);
     } else if (node.nodeType === 3) {
       out += node.textContent ?? "";
@@ -917,8 +943,8 @@ function describeVisible(doc: Document): string {
   return `可点击:[${labels.join(" | ")}] 输入框:[${inputs.join(" | ")}] 页面文字:${body}`;
 }
 
-async function waitFor(pred: () => boolean): Promise<boolean> {
-  const deadline = Date.now() + ASSERT_TIMEOUT_MS;
+async function waitFor(pred: () => boolean, timeoutMs = ASSERT_TIMEOUT_MS): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (pred()) return true;
     await sleep(200);

@@ -66,6 +66,20 @@ console.log("Visible QA · ✓ 祖先 aria-hidden/hidden/inert 使后代不可�
 }
 console.log("Visible QA · ✓ visibleTextOf 只拼可见叶子文本");
 
+// 3.1) 收起的 select 只有当前选项可见，其他 option 不能让否定断言假失败
+{
+  const dom = new JSDOM(
+    `<div id="root"><select><option selected>全部分类</option><option>餐饮</option><option>兼职</option></select><ul><li>交通</li></ul></div>`,
+  );
+  const root = dom.window.document.getElementById("root")!;
+  const visible = visibleTextOf(root);
+  assert.ok(visible.includes("全部分类"));
+  assert.ok(visible.includes("交通"));
+  assert.ok(!visible.includes("餐饮"), "未选中的 option 不应算页面可见文本");
+  assert.ok(!visible.includes("兼职"), "未选中的 option 不应污染列表筛选断言");
+}
+console.log("Visible QA · ✓ 原生 select 只暴露当前选项文本");
+
 // 4) 端到端:翻转卡片 + 动态 aria-hidden → expectText/expectNoText 按可见面判定,role=button 可点击
 const html = `<!doctype html>
 <html><body><div id="root">

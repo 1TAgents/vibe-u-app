@@ -54,7 +54,7 @@ export interface NodeState {
   /** 推理模式降级痕迹 —— 空转/空响应后下一次重试关闭 thinking 的审计记录 */
   thinkingDegrades?: {
     attempt: number;
-    reason: "spiral" | "empty";
+    reason: "spiral" | "empty" | "repetition";
     from: "enabled" | "disabled" | "default";
     to: "disabled";
     wastedTokens?: number;
@@ -399,6 +399,9 @@ export function applyEvent(s: RunState, env: Envelope<RunEvent>): RunState {
         n.durationMs = e.durationMs;
         n.prompt = e.prompt;
         n.raw = e.raw;
+        // 新运行不再保存 token 级 delta，最终正文随 node.finished 一次落盘。
+        // 历史运行的 reasoning 仍由旧 delta 事件兼容回放。
+        n.content = e.raw || n.content;
       }
       s.totals = addUsage(s.totals, e.usage);
       break;

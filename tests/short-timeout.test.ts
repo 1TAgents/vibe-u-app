@@ -8,9 +8,14 @@ const source = `
   import { useState } from "react";
   function App() {
     const [result, setResult] = useState("");
+    const [category, setCategory] = useState("");
     return <main>
-      <button onClick={() => setTimeout(() => setResult("计算完成"), 200)}>计算</button>
+      <button onClick={() => {
+        setTimeout(() => setResult("计算完成"), 200);
+        setTimeout(() => setCategory("餐饮"), 900);
+      }}>计算</button>
       <p>{result}</p>
+      {category && <button onClick={() => setResult(category + "已选择")}>{category}</button>}
     </main>;
   }
   createRoot(document.getElementById("root")).render(<App />);
@@ -40,11 +45,13 @@ const report = await runTests(html, "short-timeout", [{
   steps: [
     { action: "click", target: "计算" },
     { action: "expectText", text: "计算完成" },
+    { action: "click", target: "餐饮" },
+    { action: "expectText", text: "餐饮已选择" },
   ],
 }]);
 
 assert.equal(report.failed, 0, JSON.stringify(report.failures));
-console.log("Short timeout · ✓ 短暂 UI 反馈继续走真实时间");
+console.log("Short timeout · ✓ 短暂 UI 反馈与异步交互目标都可等待");
 }
 
 main().catch((error) => {

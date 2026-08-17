@@ -2,14 +2,14 @@
  * 角色调用设施 —— 把一次 LLM 调用变成一份「经过 schema 校验的产物」。
  *
  * 两件事在这里做,别处不做:
- *   逐 token 转发到事件流 —— 思考链、原始输出、用量都留痕
+ *   模型只在完成时写一条结果事件 —— 最终输出、用量和耗时仍可审计
  *   解析失败把错误原文回喂让它重写 —— 而且**每次打回都发事件**,
  *     悄悄重试等于把失败藏起来,审计时看不到「谁被修正了几次、因为什么」
  *
  * 这一层不含任何判定。产出合不合格由门说了算。
  */
 
-import { extractJson, streamChat } from "./llm";
+import { extractJson, requestChat } from "./llm";
 import { EventSink } from "./sink";
 import { ROLES } from "./roles";
 import type { NodeId } from "./events";
@@ -33,8 +33,9 @@ interface AgentCallOptions {
   jsonMode?: boolean;
   /**
    * 推理模式控制(DeepSeek V4 thinking 默认 enabled)。
-   * 代码直出角色(Cody 的 engineer/fix/iterate)显式 "disabled" —— 长代码输出
-   * 不该先把思考预算烧光;Ida/Luna/Archie/Tess/triage 不传,保持默认 enabled。
+   * 平台角色默认直接输出结构化产物：非流式模式下，默认思考会显著
+   * 拉长整条流水线，且 reasoning 不展示、不入库，对用户没有产品价值。
+   * 需要做针对性深思时仍可显式传 "enabled"。
    */
   thinking?: "enabled" | "disabled";
 }
@@ -63,7 +64,7 @@ async function callAgent(
   ];
 
   try {
-    const result = await streamChat(
+    const result = await requestChat(
       {
         model: opts.model,
         messages,
@@ -74,13 +75,9 @@ async function callAgent(
         // 「没找到文件块」,看不出是被格式约束掐死的。
         jsonMode: opts.jsonMode ?? false,
         signal,
-        ...(opts.thinking ? { thinking: opts.thinking } : {}),
+        thinking: opts.thinking ?? "disabled",
       },
       {
-        onReasoning: (text) =>
-          sink.emit({ type: "node.reasoning.delta", node: opts.node, text }),
-        onContent: (text) =>
-          sink.emit({ type: "node.content.delta", node: opts.node, text }),
         onRetry: (attempt, waitMs) =>
           sink.emit({ type: "node.retry", node: opts.node, attempt, waitMs }),
         onThinkingDegrade: (info) =>
@@ -166,4 +163,3 @@ export async function callAgentParsed<T>(
     ? new Error(`${opts.node} 连续 ${MAX_PARSE_RETRIES + 1} 次未能产出合法产物:${lastErr.message}`)
     : new Error(String(lastErr));
 }
-

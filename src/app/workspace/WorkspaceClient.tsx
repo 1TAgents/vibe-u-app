@@ -15,6 +15,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { CostBar } from "@/components/CostBar";
+import { CodeView } from "@/components/CodeView";
 import { GroupChat } from "@/components/GroupChat";
 import { DesignCard } from "@/components/DesignCard";
 import { PrdCard } from "@/components/PrdCard";
@@ -62,6 +63,7 @@ export function WorkspaceClient() {
   const model = params.get("model") ?? undefined;
   const replayId = params.get("run") ?? undefined;
   const reviewRequirements = params.get("review") === "1";
+  const previewRevision = [...state.buildHistory].reverse().find((build) => build.ok)?.seq;
 
   const toggleChat = useCallback(() => {
     window.localStorage.setItem(CHAT_COLLAPSED_KEY, chatCollapsed ? "0" : "1");
@@ -76,13 +78,13 @@ export function WorkspaceClient() {
     else if (prompt) void start(prompt, model, { autoApprove: !reviewRequirements });
   }, [prompt, model, replayId, reviewRequirements, start, load]);
 
-  // 代码一出现就自动切到预览,让人第一时间看到"东西真的跑起来了"
+  // 只有新代码构建通过后才切换预览；模型输出和群聊刷新不能重建 iframe。
   useEffect(() => {
-    if (state.files.length > 0 && !autoSwitchedRef.current) {
+    if (previewRevision !== undefined && !autoSwitchedRef.current) {
       autoSwitchedRef.current = true;
       setView("preview");
     }
-  }, [state.files.length, version]);
+  }, [previewRevision]);
 
   return (
     <div className="flex h-screen flex-col bg-ink-950">
@@ -210,11 +212,19 @@ export function WorkspaceClient() {
               </div>
             </div>
 
-            <div className={cn("h-full", view === "code" || view === "preview" ? "block" : "hidden")}>
-              {runId && state.files.length > 0 ? (
-                <Preview runId={runId} version={version} />
+            <div className={cn("h-full overflow-auto", view === "code" ? "block" : "hidden")}>
+              {state.files.length > 0 ? (
+                <CodeView files={state.files} />
               ) : (
-                  <Placeholder text="Luna 正在定视觉方案，随后由 Cody 实现" />
+                <Placeholder text="Cody 还没有产出代码" />
+              )}
+            </div>
+
+            <div className={cn("h-full", view === "preview" ? "block" : "hidden")}>
+              {view === "preview" && runId && previewRevision !== undefined ? (
+                <Preview runId={runId} revision={previewRevision} />
+              ) : (
+                <Placeholder text="代码构建通过后可预览" />
               )}
             </div>
           </div>

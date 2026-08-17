@@ -75,6 +75,20 @@ async function main() {
   assert.equal(updated?.totals.costUsd, 0.00771);
   ok("updateRun 写回 JSONB totals 且浮点不失真");
 
+  // 回归护栏：终态与用量 heartbeat 在生产中会并发。局部更新
+  // 不得携带先前读到的旧 status，否则 succeeded 会被覆盖回 running。
+  await store.updateRun(runId, { status: "running", totals: { ...EMPTY_USAGE } });
+  await Promise.all([
+    store.updateRun(runId, { status: "succeeded" }),
+    store.updateRun(runId, {
+      totals: { ...EMPTY_USAGE, totalTokens: 31000, costUsd: 0.008 },
+    }),
+  ]);
+  const concurrentlyUpdated = await store.getRun(runId);
+  assert.equal(concurrentlyUpdated?.status, "succeeded");
+  assert.equal(concurrentlyUpdated?.totals.totalTokens, 31000);
+  ok("updateRun 并发局部更新不丢终态");
+
   assert.equal(await store.getRun("不存在的-run"), null);
   ok("getRun 未命中返回 null");
 

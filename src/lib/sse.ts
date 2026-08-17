@@ -41,6 +41,16 @@ export function sseResponse(
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       let closed = false;
+      // LLM 改为非流式后，一个角色可能几十秒没有业务事件。心跳只维持传输连接，
+      // 不经过 EventSink、不写数据库，也不触发前端状态刷新。
+      const heartbeat = setInterval(() => {
+        if (closed) return;
+        try {
+          controller.enqueue(encoder.encode(": heartbeat\n\n"));
+        } catch {
+          closed = true;
+        }
+      }, 15_000);
       const push = (env: Envelope<RunEvent>) => {
         if (closed) return;
         try {
@@ -65,6 +75,7 @@ export function sseResponse(
           .updateRun(runId, { status: terminal, totals: sink.totals })
           .catch(() => {});
       } finally {
+        clearInterval(heartbeat);
         signal?.removeEventListener("abort", onExternalAbort);
         await sink.flush();
         // 每个阶段结束都把成本写回 —— 停在审批门或中途断掉的生成

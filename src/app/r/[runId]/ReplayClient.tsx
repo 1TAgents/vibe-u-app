@@ -225,7 +225,7 @@ export function ReplayClient({ runId }: { runId: string }) {
 
             <div className={cn("h-full", view === "code" || view === "preview" ? "block" : "hidden")}>
               {state.files.length > 0 ? (
-                <Preview runId={runId} version={0} />
+                <Preview runId={runId} revision={0} />
               ) : (
                 <p className="flex h-full items-center justify-center text-sm text-ink-500">
                   这一帧还没有代码

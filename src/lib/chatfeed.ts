@@ -71,7 +71,9 @@ export function toFeed(state: RunState): FeedItem[] {
           ? `(结构化产物修正第 ${n.parseRetries} 次)`
           : "") +
         (n.thinkingDegrades && n.thinkingDegrades.length > 0
-          ? `(第${n.thinkingDegrades[0].attempt}次重试时推理空转,已关闭思考直接输出)`
+          ? `(第${n.thinkingDegrades[0].attempt}次重试时${
+              n.thinkingDegrades[0].reason === "repetition" ? "输出重复" : "推理空转"
+            },已关闭思考直接输出)`
           : ""),
       status: n.phase === "running" ? "running" : n.phase === "failed" ? "failed" : "done",
       tone: n.phase === "failed" ? "error" : undefined,

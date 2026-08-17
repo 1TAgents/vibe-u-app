@@ -196,6 +196,16 @@ async function fireGates(
 
     if (v.gate === "build") {
       const built = v.evidence as BuildSuccess | undefined;
+      if (built?.ok) {
+        // 候选 bundle 在构建阶段写入；预览 GET 只负责读取，不能靠反复打开 iframe
+        // 才触发构建，否则代码更新后会继续返回旧 candidate。
+        await getStore().saveAppBundle(runId, {
+          js: built.js,
+          css: built.css,
+          bytes: built.bytes,
+          updatedAt: Date.now(),
+        });
+      }
       sink.emit({
         type: "build.result",
         attempt: st.budget.dispatches,
@@ -771,6 +781,11 @@ export async function runLoop(
   },
   signal?: AbortSignal,
 ): Promise<RunResult> {
+  // Vercel 当前会在 800 秒硬杀函数；提前 200 秒收口，保证终态、成本和事件能落盘。
+  // 这不是业务轮次预算，而是单次 Serverless 请求的墙钟保护。
+  const softLimitMs = Number(process.env.RUN_SOFT_LIMIT_MS ?? 600_000);
+  const deadlineSignal = AbortSignal.timeout(softLimitMs);
+  const runSignal = signal ? AbortSignal.any([signal, deadlineSignal]) : deadlineSignal;
   const st: WorkState = {
     request: input.request,
     followUps: input.followUps ?? [],
@@ -796,8 +811,21 @@ export async function runLoop(
   }
 
   for (;;) {
-    if (signal?.aborted) {
-      throw signal.reason instanceof Error ? signal.reason : new Error("运行已取消");
+    if (runSignal.aborted) {
+      if (signal?.aborted) {
+        throw signal.reason instanceof Error ? signal.reason : new Error("运行已取消");
+      }
+      const reason = `本轮运行达到 ${Math.round(softLimitMs / 1000)} 秒软截止，平台已在硬超时前安全收口`;
+      sink.emit({
+        type: "escalated",
+        to: "human",
+        attempt: st.budget.dispatches,
+        reason,
+        cases: [],
+      });
+      const status = completionReady(st) ? "succeeded" : "failed";
+      await finish(sink, input.runId, status);
+      return { status, files: st.files };
     }
 
     // ---- 问 Piper:下一步派给谁 ----
@@ -820,7 +848,7 @@ export async function runLoop(
           jsonMode: true,
         },
         (raw) => DispatchSchema.parse(extractJson(raw)),
-        signal,
+        runSignal,
       );
     }
     syncUsage(st, sink);
@@ -847,7 +875,7 @@ export async function runLoop(
       const sig = failureSignature([rejection]);
       const check = checkDispatch(st.budget, "done", sig);
       if (!check.allowed) {
-        await handoff(sink, st, check.reason, input.runId, signal);
+        await handoff(sink, st, check.reason, input.runId, runSignal);
         return { status: "handoff", files: st.files };
       }
       st.budget = spend(st.budget, "done", sig);
@@ -878,7 +906,7 @@ export async function runLoop(
           maxDispatches: DEFAULT_LIMITS.maxDispatches,
         },
       });
-      await handoff(sink, st, decision.reason, input.runId, signal);
+      await handoff(sink, st, decision.reason, input.runId, runSignal);
       return { status: "handoff", files: st.files };
     }
 
@@ -886,7 +914,7 @@ export async function runLoop(
     const sig = st.gatesPassed ? undefined : failureSignature(st.facts);
     const check = checkDispatch(st.budget, decision.next as NodeId, sig);
     if (!check.allowed) {
-      await handoff(sink, st, check.reason, input.runId, signal);
+      await handoff(sink, st, check.reason, input.runId, runSignal);
       return { status: "handoff", files: st.files };
     }
 
@@ -907,7 +935,7 @@ export async function runLoop(
 
     // ---- 那个人干活。他的产物会自动触发对应的门 ----
     try {
-      await runRole(sink, st, decision.next, decision.brief, input.runId, signal);
+      await runRole(sink, st, decision.next, decision.brief, input.runId, runSignal);
     } catch (err) {
       // 角色本身炸了(schema 连续解析失败等)也是一条事实,交给 Piper 判断
       st.facts = [err instanceof Error ? err.message : String(err)];
@@ -976,7 +1004,14 @@ async function handoff(
 
 async function finish(sink: EventSink, runId: string, status: "succeeded" | "failed") {
   sink.emit({ type: "run.finished", status, totals: sink.totals });
-  await getStore().updateRun(runId, { status, totals: sink.totals }).catch(() => {});
+  const store = getStore();
+  await store.updateRun(runId, { status, totals: sink.totals }).catch(() => {});
+  // 产品、设计、构建、功能 QA 与 Ida 交付验收全部通过后，
+  // 候选 bundle 就是已验收的稳定版本。在终态内原子晋升，
+  // 让 /a/:runId 真正成为可单独打开的公开应用；失败返工不覆盖旧稳定版。
+  if (status === "succeeded") {
+    await store.publishAppBundle(runId).catch(() => {});
+  }
   await sink.flush();
 }
 

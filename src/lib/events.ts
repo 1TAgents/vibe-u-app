@@ -162,7 +162,10 @@ export type RunEvent =
       outcome?: "succeeded" | "stopped";
     }
   | { type: "node.started"; node: NodeId; role: string; model: string }
-  /** 推理模型的思考链增量 —— 这是把 agent 从黑盒变成玻璃盒的关键 */
+  /**
+   * 旧版本的 token 级事件。新运行不再产生；保留类型仅用于兼容历史回放。
+   * 模型最终正文和用量统一由 node.finished 持久化；推理过程不再写数据库。
+   */
   | { type: "node.reasoning.delta"; node: NodeId; text: string }
   | { type: "node.content.delta"; node: NodeId; text: string }
   | {
@@ -189,7 +192,7 @@ export type RunEvent =
       /** 降级后生效的第几次尝试 */
       attempt: number;
       /** 降级原因:spiral = 思考超阈值仍无正文;empty = 流正常结束但正文为空 */
-      reason: "spiral" | "empty";
+      reason: "spiral" | "empty" | "repetition";
       /** 降级前的 thinking 模式(default = 请求体未显式传,网关默认 enabled) */
       from: "enabled" | "disabled" | "default";
       /** 降级后的 thinking 模式 */
