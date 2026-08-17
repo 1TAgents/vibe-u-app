@@ -28,7 +28,7 @@
 ## 基线
 
 - `npm run check`：通过。
-- 预算：总派单 50 轮；第 35 轮起软提醒；同角色连续 3 次、同失败签名 3 次仍熔断。
+- 预算：总派单 50 轮；第 35 轮起软提醒；同角色连续 5 次、同失败签名 3 次仍熔断。
 - 场景 runner：按当前动态编排与内置验收架构重新实现，不使用旧版 `/verify` 接口。
 
 ## 逐场景记录
@@ -126,9 +126,37 @@
 
 ## 阶段结论
 
-- 完整通过：todo、notes、kanban、coffee-site。
-- 已测试并留下明确边界：ledger、pomodoro、inventory、booking、poll、mortgage。这里的“未完整通过”不是笼统失败：每个场景都保存了 run、结果文件、失败步骤和本轮平台修复，可确定性重放。
+- 初轮完整通过：todo、notes、kanban、coffee-site；初轮其余场景保留了可重放的失败证据。
 - 本轮新增的通用能力集中在四类：测试执行器真实交互（模态框、select、布尔属性、可见文本）；QA/Ida 责任分流（`test-plan`）；业务生成约束（必备资源种子、成功状态所有权）；确定性质量门（房贷算术复核）。
 - 最终回归：`npm run check` 全部通过；`DATABASE_URL= npm run build` 生产构建通过。新增的模态框、select、布尔属性和计算计划回归已加入默认 `npm test` 链。
 
 每个场景完成后继续补充：修复回归命令、重跑结果与剩余边界。
+
+## 2026-08-17 历史失败与未跑场景补测
+
+迭代后的最新本地代码重新覆盖了此前失败或没有正式记录的 13 个场景；13/13 均完成
+功能 QA、交付门、候选预览和本地应用验证：
+
+| 场景 | 成功 run | 结果文件 |
+| --- | --- | --- |
+| ledger | `CDCIVFGaGmIYV8rd` | `tests/results/2026-08-17T10-52-09.json` |
+| booking | `ox5t3_Mu_C1IdDw7` | `tests/results/2026-08-17T11-31-52.json` |
+| recipe | `SwYid701OYJrwI_3` | `tests/results/2026-08-17T11-33-09.json` |
+| expense | `rsseMqaBb_HlSeC-` | `tests/results/2026-08-17T11-42-13.json` |
+| weekly-report | `nAxpg0RNQ92nDnSh` | `tests/results/2026-08-17T11-47-11.json` |
+| crm | `r8C4pcifpBrn-Wej` | `tests/results/2026-08-17T11-47-54.json` |
+| habit | `1179hDAXj6bJ6nVx` | `tests/results/2026-08-17T11-59-22.json` |
+| leave | `lTM5K-OQ72YpBw2b` | `tests/results/2026-08-17T12-00-53.json` |
+| inventory | `oVh7vRxlDNpeE7-x` | `tests/results/2026-08-17T12-04-03.json` |
+| poll | `CGDdswy67yKgXiH6` | `tests/results/2026-08-17T12-07-45.json` |
+| workout | `A2v4dha8h5cX1f4s` | `tests/results/2026-08-17T12-21-06.json` |
+| pomodoro | `KSKORat1bCW_heR1` | `tests/results/2026-08-17T13-08-05.json` |
+| mortgage | `lbPPnT9emIhHnfHw` | `tests/results/2026-08-17T13-30-33.json` |
+
+结合此前已有成功证据的 todo、notes、kanban、coffee-site、flashcard、sales-dash、bmi，
+20 个场景类别现在都至少有一次成功记录。该结论表示“跨多轮迭代累计 20/20”，不是同一
+次批处理无重试地一次性全绿。
+
+本轮又补齐四类平台能力：装饰分隔符与千分位的语义等价；短暂 UI 延迟不被业务假时钟
+冻结；`Date.now()` 与 interval 共用虚拟时间轴；房贷验收按源码单位、字段别名、只读结果
+角色和整套用例的单位证据做确定性复算。对应回归均已加入默认 `npm test`。

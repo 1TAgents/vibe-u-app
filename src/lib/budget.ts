@@ -43,7 +43,9 @@ export interface BudgetLimits {
  */
 export const DEFAULT_LIMITS: BudgetLimits = Object.freeze({
   maxDispatches: 50,
-  maxSameRole: 3,
+  // QA 计划修订和复杂实现都可能连续经历「预检修正 → 执行修正 → 回归」；3 次会在
+  // 仍有 40 多轮总预算时过早熔断。放宽到 5，但同失败签名仍在 3 次时单独截断。
+  maxSameRole: 5,
   maxSignature: 3,
 });
 

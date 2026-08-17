@@ -73,7 +73,23 @@ function ledgerApp() {
 </script></body></html>`;
 }
 
+/** 同一字段有 label 与 placeholder；二者都是执行器支持的合法定位名称。 */
+function labeledTextareaApp() {
+  return `<!DOCTYPE html><html lang="zh-CN"><body>
+    <label for="done">本周完成</label>
+    <textarea id="done" name="weeklyDone" placeholder="记录本周实际完成的关键事项"></textarea>
+  </body></html>`;
+}
+
 async function main() {
+  {
+    const inv = await collectScreenInventory(labeledTextareaApp(), "field-aliases");
+    assert.ok(inv.inputs.includes("本周完成"), "关联 label 是合法字段名");
+    assert.ok(inv.inputs.includes("记录本周实际完成的关键事项"), "placeholder 也是合法字段名");
+    assert.ok(inv.inputs.includes("weeklyDone"), "name 是执行器支持的字段名");
+    ok("输入控件探查保留 label、placeholder 与 name 等全部合法别名");
+  }
+
   {
     const inv = await collectScreenInventory(ledgerApp(), "ledger-probe");
     assert.equal(inv.afterOpen?.via, "记支出");

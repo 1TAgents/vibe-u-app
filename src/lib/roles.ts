@@ -274,7 +274,12 @@ export function pmPrompt(userRequest: string) {
 宁可少而完整,不要多而残缺。
 
 平台已经提供真实持久化数据服务，所有业务数据刷新后都会保留。不要把「不做数据持久化」
-或「刷新后清空」写进 nonGoals，也不要设计只存在浏览器内存里的假数据。`,
+或「刷新后清空」写进 nonGoals，也不要设计只存在浏览器内存里的假数据。
+
+如果需求包含计时器、倒计时、阶段切换或其它状态机，PRD 必须明确写出每个状态、默认时长、
+自动转换条件，以及暂停、继续、重置、手动跳过分别会产生什么结果。计数或统计只允许在明确的
+完成条件达成时更新；用户没指定时采用克制且确定的默认规则：自然完成才计数，手动跳过不计数。
+不要把这些关键行为留给设计、工程或 QA 各自猜测。`,
     user: `用户需求:${userRequest}
 
 请输出 PRD,JSON 结构如下:
@@ -404,6 +409,11 @@ export function architectPrompt(userRequest: string, prd: Prd, visual: VisualDes
 - 数据持久化通过平台注入的 \`db\` 模块完成,
   它提供 collection 级别的 CRUD,数据真实存在服务端。
 - 因此数据模型请按 "collection" 来设计,每个 collection 是一组同构记录。
+- 如果主流程依赖产品自带的基础资源(会议室、成员、班次、菜单等)，而 PRD 没有管理员维护
+  这些资源的 P0 功能，必须在 notes 中明确 3-5 条静态配置或首次启动种子数据；不能只设计
+  一个必然为空、用户又没有入口填充的 collection。
+- 只预置“用户开始操作前必须先选择”的产品基础资源。任务、笔记、费用、客户、报销单、
+  训练记录等由用户创建的业务记录必须从真实空状态开始，绝不能为了让测试有数据而预置。
 - 每条记录平台会自动带 \`id\` 和 \`createdAt\`,你不需要重复定义。`,
     user: `用户需求:${userRequest}
 
@@ -1055,6 +1065,27 @@ export function qaPrompt(
 - {"action":"expectAttribute","target":"可见文字或完整 aria-label","attr":"语义状态属性名","value":"该属性应有的值"} —— 断言元素语义状态属性
 - {"action":"expectNoAttribute","target":"可见文字或完整 aria-label","attr":"语义状态属性名","value":"该属性不应再有的值"} —— 断言元素语义状态属性已不再是该值(或已消失)
 
+**原生下拉框(select)也使用 fill，不使用 click 点选 option。** target 写下拉框的标签或
+aria-label，value 写选项的可见文字或实际 value。例如选择开始时间 17:30：
+{"action":"fill","target":"开始时间","value":"17:30"}。原生 option 不是按钮，写
+{"action":"click","target":"17:30"} 会被判为找不到可点击元素。
+
+**加减步进器不是输入框。** 当真实界面把「组数/重量/数量」列为区域，并提供「组数加一、
+重量减一」等按钮时，用 click 操作按钮，用 expectNumberWithin 读取对应数值区域；不得对
+只读数字使用 fill/expectValue。不要臆造 PRD 未规定的最小值、最大值或步长。测试汇总时，
+必须在录入页完成“填写必要字段 → 调整步进器 → 保存”，再切换到汇总页断言；每条用例都是
+独立空数据，不能先切到汇总页再寻找只存在于录入页的保存按钮。
+
+**aria-label 是定位名称，不保证整句作为可见文字渲染。** 界面探查把「今日完成番茄数」
+列为区域时，可用它作为 expectNumberWithin/expectTextWithin 的 target；但不能因为探查还列出
+动态 aria-label「今日完成 0 个番茄」，就用 expectText 断言这整句可见。计数、票数、数量等
+只读数字优先写 {"action":"expectNumberWithin","target":"今日完成番茄数","value":"0"}。
+
+**计算结果、统计卡片等只读金额绝不是输入框。** 月供、总利息、贷款本金、合计等结果若在
+界面探查的 regions 中出现，必须用 expectNumberWithin 指向那个真实区域；禁止用
+expectValue 读取它。只验 PRD 承诺且界面真实提供的指标：PRD 只要求月供和总利息时，不能
+自行追加“总还款额、还款摘要、中间系数”等指标，即使它们可以由公式推导。
+
 计时、倒计时、轮询、自动保存等定时任务的终态(如 25 分钟专注结束、休息结束)必须用
 advanceTime 显式推进时间才能到达,**绝不能让测试真实等待几十秒或更久**,也不要写
 「等待 25 分钟」这种步骤。advanceTime 的单位是毫秒:25 分钟写 1500000,5 分钟写 300000,
@@ -1093,8 +1124,11 @@ expectText / expectNoText / expectTextWithin 里的 text 只能来自三处:
 
 验证「无效输入被拒绝」时,正确的断言对象不是提示文案,而是**结果没有发生**:
   · 先 fill 无效值 → click 提交 → expectNoText 断言那条无效记录没有出现
-  · 若要验错误态本身,用 expectAttribute 断言承载错误样式的语义属性
-    (如 aria-invalid="true"),而不是猜提示文字
+  · 若要验错误态本身,只有源码明确给输入元素设置了 aria-invalid/data-state 等语义属性时，
+    才能用 expectAttribute；不能仅因为“无效”就假设一定存在 aria-invalid
+  · 若源码没有语义属性，可复制源码中真实存在的错误文案进行 expectText；不要自行改写文案
+  · 不要用 expectNoText("月供") 这类宽泛断言：页面初始说明、按钮“计算月供”本来就含该词，
+    应限定真实结果区域或断言无效提交后仍保留的空结果文案
 证明「没被添加」比证明「弹了某句话」更接近这条需求的本质。
 图标按钮没有可见文字时,必须使用它完整的 aria-label。aria-label 若包含刚填入的
 任务内容,就把用例里的值代入,例如源码是「将任务内容标记为已完成」时可写
@@ -1226,7 +1260,10 @@ ${screen.afterCreate ? `
 2. 用在深层的控件之前,用例必须**先做出把那一层打开的操作**(点新建入口、
    进详情、切页签、翻卡片)。跳过这一步直接写 fill/click,执行时必然失败。
 3. \`expectTextWithin\` 的 target 只能用上面列出的**区域容器**名,
-   不要拿输入框名或按钮名当区域用。
+   不要拿输入框名或按钮名当区域用。输出前逐条扫描所有 \`*Within\` 步骤：target 不在
+   「区域容器」清单时，必须改成不带 target 的全页面 \`expectText/expectNoText\`；若区域
+   容器显示「(无)」，本版用例中禁止出现任何 \`*Within\` 动作。筛选按钮「餐饮/办公」
+   即使和业务分类同名也仍然只是按钮，绝不是内容区域。
 4. 上面哪一层都没有、也没有入口能打开的东西,说明产品真的没做 —— 那才是缺陷,
    照实写用例让它失败,不要绕开。
 
@@ -1256,6 +1293,8 @@ export function qaTriagePrompt(input: {
   visual?: VisualDesign;
   /** Tess 报告里的失败描述(含当时页面上有什么) */
   failures: string[];
+  /** 平台在空数据初始页真实观察到的可操作界面。 */
+  screen?: { clickables: string[]; inputs: string[]; regions: string[] };
   /** 上一轮归因 —— 同样用例修后仍失败时,提示 Ida 不要重复归因 */
   previousCause?: QaCause;
 }) {
@@ -1277,6 +1316,16 @@ export function qaTriagePrompt(input: {
 出现在静态 PRD。只有步骤/断言本身超出功能边界、目标与真实页面锚点明显冲突时才归为
 test-plan。若表单提交后弹窗仍开着、第一条业务结果也没有出现，应优先判断提交/实现/执行器
 问题，不能把后续所有动态目标一起归成测试计划错误。
+若失败报告同时包含「测试计划预检警告：目标不在源码或真实界面」和随后「找不到同一目标/区域」，
+这两条证据已经形成闭环，cause 必须是 test-plan；除非 PRD 明确承诺了这个精确名称的区域，
+否则不能让工程师新增 DOM 来迁就 Tess 编造的 target。
+若 PRD 主流程依赖产品自带资源(会议室、菜单、成员等)，且没有管理员配置入口，而界面探查
+只看到空状态、没有任何能启动主流程的资源或创建入口，那么「找不到资源按钮」是
+implementation：实现漏了静态配置或种子数据。不能因为 QA 写出的具体资源名不在当前空页面
+就归为 test-plan；先判断一个真实用户在这张空页面上是否有任何办法完成 PRD 主流程。
+这条只适用于“第一条用户记录创建前就必须选择”的基础资源。任务、笔记、费用、客户、
+报销单、训练记录等本来就由用户创建，应该从空状态开始；只要页面存在相应的新建入口，
+就绝不能用缺种子数据解释后续失败，更不能要求工程师预置虚假业务记录。
 计算类失败必须先把用例输入代入既定公式复算。若 QA 的月供、总利息、比例或合计预期
 算错，cause 必须是 test-plan；绝不能把错误数字交给 Cody，要求产品实现去匹配错误答案。
 
@@ -1289,6 +1338,7 @@ ${JSON.stringify(input.prd, null, 2)}
 ${JSON.stringify(input.design, null, 2)}
 
 ${input.visual ? `产品视觉方案:\n${JSON.stringify(input.visual, null, 2)}\n` : ""}
+${input.screen ? `平台界面探查(空数据初始状态):\n${JSON.stringify(input.screen, null, 2)}\n` : ""}
 Tess 的失败报告:
 ${input.failures.map((f, i) => `${i + 1}. ${f}`).join("\n")}
 

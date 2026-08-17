@@ -124,6 +124,29 @@ const staticAuditGate: Gate = {
   },
 };
 
+/**
+ * 20 场景本地跑批的专项压力门。
+ *
+ * 它只在请求显式携带 scenarioId 时启用；真实用户的自由需求没有 scenarioId，
+ * 不会被固定场景规则约束。此前把这类缺口混进非阻塞 test-plan 警告，QA 即使
+ * 漏掉库存零边界等本轮核心风险也会继续执行并交付，最后才被外层 runner 拒绝，
+ * 已经来不及返工。专项门必须在执行测试前阻塞，并把缺口直接回喂 Tess 重写。
+ */
+const scenarioCoverageGate: Gate = {
+  id: "scenario-coverage",
+  name: "场景难点覆盖",
+  on: "artifact:tests",
+  blocking: true,
+  async run(ctx) {
+    if (!ctx.scenarioId) return { ok: true, facts: [] };
+    const cov = stressCovered(ctx.scenarioId, [{ cases: ctx.cases ?? [] }]);
+    return {
+      ok: cov.covered,
+      facts: cov.missing.map((missing) => `缺覆盖:${missing}`),
+    };
+  },
+};
+
 const testPlanGate: Gate = {
   id: "test-plan",
   name: "测试计划体检",
@@ -134,12 +157,6 @@ const testPlanGate: Gate = {
   async run(ctx) {
     const cases = ctx.cases ?? [];
     const facts: string[] = [];
-
-    // 该测的测了没有
-    if (ctx.scenarioId) {
-      const cov = stressCovered(ctx.scenarioId, [{ cases }]);
-      if (!cov.covered) facts.push(...cov.missing.map((m) => `缺覆盖:${m}`));
-    }
 
     // 写下来的这些执行得了吗
     const t = checkTargets(cases, ctx.files, { names: ctx.screenNames ?? [] });
@@ -253,6 +270,7 @@ const deliveryGate: Gate = {
 export const GATES: readonly Gate[] = Object.freeze([
   buildGate,
   staticAuditGate,
+  scenarioCoverageGate,
   testPlanGate,
   scopedTargetGate,
   valueTargetGate,

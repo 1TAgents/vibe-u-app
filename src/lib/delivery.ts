@@ -270,16 +270,20 @@ function readNames(doc: Document): ScreenNames {
 
   const clickables = uniq(clickableEls(doc).map(nameOf));
 
+  // 执行器按 placeholder / aria-label / 关联 label / name / id 中任一种定位字段。
+  // 探查也必须保留全部合法别名，不能只取第一个：一个 textarea 同时有 placeholder
+  // 「记录本周完成…」和 label「本周完成」时，两者都能被 findInput 找到。只上报
+  // placeholder 会让 value-target 门把合法的 expectValue("本周完成") 误判成只读区域。
   const inputs = uniq(
     [...doc.querySelectorAll<HTMLElement>("input, textarea, select")]
       .filter(isVisible)
-      .map(
-        (el) =>
-          el.getAttribute("placeholder") ||
-          el.getAttribute("aria-label") ||
-          labelTextFor(doc, el) ||
-          "",
-      ),
+      .flatMap((el) => [
+        el.getAttribute("placeholder") || "",
+        el.getAttribute("aria-label") || "",
+        labelTextFor(doc, el) || "",
+        el.getAttribute("name") || "",
+        el.getAttribute("id") || "",
+      ]),
   );
 
   // 与 findRegion 同源:aria-label 或内部标题才构成区域名

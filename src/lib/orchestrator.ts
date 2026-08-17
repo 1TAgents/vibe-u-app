@@ -66,6 +66,7 @@ import { RUNTIME_PATHS, withRuntimeFiles } from "./runtime-files";
 import { getStore } from "./store";
 import type { GeneratedFile, NodeId, QaCause, QaTriage } from "./events";
 import type { TestCase } from "./testrunner";
+import { normalizeMortgageExpectations } from "./stressCoverage";
 
 /** 一次 run 的全部工作状态。由事件流拥有,这里只是循环内的镜像 */
 interface WorkState {
@@ -117,6 +118,27 @@ export function mergeGeneratedFiles(
   const files = new Map(authored(current).map((f) => [f.path, f]));
   for (const file of changed) files.set(file.path, file);
   return [...files.values()].sort((a, b) => a.path.localeCompare(b.path));
+}
+
+/** Keep advisory test-plan evidence attached to the failure it predicted. */
+export function qaTriageEvidence(
+  functionalFacts: string[],
+  planCheck: Pick<GateRunResult, "verdicts">,
+): string[] {
+  const warnings = planCheck.verdicts
+    .filter((verdict) => !verdict.blocking && !verdict.ok)
+    .flatMap((verdict) => verdict.facts)
+    .map((fact) => `测试计划预检警告：${fact}`);
+  return [...new Set([...functionalFacts, ...warnings])];
+}
+
+export function coverageMissingFromFacts(facts: string[]): string[] {
+  return [...new Set(
+    facts
+      .filter((fact) => fact.startsWith("缺覆盖:"))
+      .map((fact) => fact.slice("缺覆盖:".length).trim())
+      .filter(Boolean),
+  )];
 }
 
 /**
@@ -343,6 +365,23 @@ export function qaTriageRoute(triage: QaTriage): Dispatch[] {
   ];
 }
 
+/**
+ * Delivery evidence is collected from the built DOM/CSS, so a hard failure at
+ * this point describes the current implementation, not an upstream design
+ * document. Route it straight to engineering; sending it to a designer only
+ * changes the visual spec while the failing bundle remains byte-for-byte the
+ * same and inevitably fails the gate again.
+ */
+export function deliveryRepairDispatch(hardIssues: string[]): Dispatch {
+  const evidence = hardIssues.join("；") || "交付证据不完整";
+  return {
+    next: "engineer",
+    reason: `平台交付门发现当前实现缺陷：${evidence}`,
+    brief: `按平台从当前构建采集的客观证据修复代码：${evidence}。` +
+      "保留已通过的功能、PRD 与视觉方案，修复后重新构建和验收。",
+  };
+}
+
 /* --------------------------- 五个角色干活 --------------------------- */
 
 async function runRole(
@@ -502,7 +541,13 @@ async function runRole(
     const qaBrief = st.facts.length > 0
       ? `${brief}\n\n上一轮必须逐条纠正的事实:\n${st.facts.map((fact) => `- ${fact}`).join("\n")}`
       : brief;
-    const p = qaPrompt(st.prd, authored(st.files), qaBrief, undefined, {
+    const coverageMissing = coverageMissingFromFacts(st.facts);
+    const p = qaPrompt(
+      st.prd,
+      authored(st.files),
+      qaBrief,
+      coverageMissing.length > 0 ? coverageMissing : undefined,
+      {
       clickables: [
         ...(visible?.clickables ?? []),
         ...(visible?.afterOpen?.clickables ?? []),
@@ -515,14 +560,21 @@ async function runRole(
       ],
       regions: visible?.regions ?? [],
       headings: visible?.headings ?? [],
-    });
+      },
+    );
     const plan = await callAgentParsed(
       sink,
       { node: "qa", model, system: p.system, user: p.user, maxTokens: 20000, jsonMode: true },
       (raw) => TestCaseSchema.parse(extractJson(raw)),
       signal,
     );
-    st.cases = plan.cases as TestCase[];
+    const parsedCases = plan.cases as TestCase[];
+    st.cases = st.scenarioId === "mortgage"
+      ? normalizeMortgageExpectations(
+          parsedCases,
+          authored(st.files).map((file) => file.content).join("\n"),
+        )
+      : parsedCases;
     sink.emit({ type: "artifact", kind: "tests", data: st.cases });
 
     const planCheck = await fireGates(sink, st, "artifact:tests", runId);
@@ -552,11 +604,17 @@ async function runRole(
     if (st.design && functional.facts.length > 0) {
       try {
         const currentFailureSignature = failureSignature(functional.facts);
+        const triageFailures = qaTriageEvidence(functional.facts, planCheck);
         const triagePrompt = qaTriagePrompt({
           prd: st.prd,
           design: st.design,
           visual: st.visual,
-          failures: functional.facts,
+          failures: triageFailures,
+          screen: st.screen ? {
+            clickables: st.screen.clickables,
+            inputs: st.screen.inputs,
+            regions: st.screen.regions,
+          } : undefined,
           previousCause:
             st.lastQaFailureSignature === currentFailureSignature
               ? st.lastQaCause
@@ -585,7 +643,7 @@ async function runRole(
         st.requiredDispatches = qaTriageRoute(triage);
         sink.emit({ type: "qa.triage", attempt: st.budget.dispatches, triage });
         st.facts = [
-          ...functional.facts,
+          ...triageFailures,
           `Ida 已归因并分配给 ${triage.assignee}：${triage.reason}`,
         ];
       } catch {
@@ -644,6 +702,7 @@ async function runRole(
       });
       st.facts = hardIssues;
       st.gatesPassed = false;
+      st.requiredDispatches = [deliveryRepairDispatch(hardIssues)];
       return;
     }
 

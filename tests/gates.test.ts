@@ -98,10 +98,26 @@ async function main() {
       screenNames: ["记账本"],
     });
     assert.equal(r.passed, true, "非阻塞门不过不能挡住流程");
-    assert.equal(r.verdicts[0].ok, false, "但它确实判为不合格");
-    assert.equal(r.verdicts[0].blocking, false);
+    const advisory = r.verdicts.find((verdict) => verdict.gate === "test-plan");
+    assert.equal(advisory?.ok, false, "但它确实判为不合格");
+    assert.equal(advisory?.blocking, false);
     assert.ok(r.facts.length > 0, "事实必须留下,喂给调度器");
     ok("非阻塞门不过照样放行,但事实进得去");
+  }
+
+  /* --- 固定跑批场景的核心难点必须在执行前补齐 --- */
+  {
+    const r = await runGates("artifact:tests", {
+      runId: "g5",
+      files: goodApp,
+      scenarioId: "inventory",
+      cases: [{ name: "只验证能新增商品", steps: [] }],
+    });
+    assert.equal(r.passed, false, "带 scenarioId 的跑批不能漏测该场景核心风险");
+    assert.equal(r.verdicts[0].gate, "scenario-coverage");
+    assert.equal(r.verdicts[0].blocking, true);
+    assert.ok(r.facts.some((fact) => fact.startsWith("缺覆盖:")));
+    ok("固定跑批缺少场景难点时在执行前阻塞并返工");
   }
 
   /* --- 注册表运行期改不动 --- */

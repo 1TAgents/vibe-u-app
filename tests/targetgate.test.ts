@@ -77,6 +77,19 @@ function tc(name: string, steps: TestCase["steps"]): TestCase {
   ok("拦下 flashcard 的「卡片分组」——界面上只有「待复习」「已掌握」");
 }
 
+{
+  const r = checkTargets(
+    [tc("休息阶段", [
+      { action: "expectTextWithin", target: "休息倒计时 5:00", text: "5:00" },
+    ] as TestCase["steps"])],
+    src(`const phaseLabel = isFocus ? "专注" : "休息";
+      <div aria-label={\`${"${phaseLabel}"}倒计时 ${"${timeStr}"}\`}>{timeStr}</div>`),
+    { names: ["专注倒计时 25:00"] },
+  );
+  assert.deepEqual(r.problems, [], "动态 aria-label 的多个已知片段可以组成合法运行期名称");
+  ok("动态名称「休息 + 倒计时 + 时间」不被整串字面检查误拦");
+}
+
 /* --- 合法写法不能误拦 --- */
 {
   // 组合名:记录名是运行期填进去的数据,动作词来自源码 —— 这是被明确要求的写法

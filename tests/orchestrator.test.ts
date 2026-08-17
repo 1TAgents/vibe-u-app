@@ -9,11 +9,14 @@
 import assert from "node:assert/strict";
 import {
   completionIssues,
+  coverageMissingFromFacts,
+  deliveryRepairDispatch,
   mergeGeneratedFiles,
+  qaTriageEvidence,
   qaTriageDispatch,
   qaTriageRoute,
 } from "../src/lib/orchestrator";
-import { buildQaTriage } from "../src/lib/roles";
+import { buildQaTriage, pmPrompt, qaPrompt, qaTriagePrompt } from "../src/lib/roles";
 import { foldEvents } from "../src/lib/fold";
 import { toFeed } from "../src/lib/chatfeed";
 import { changedFilePaths } from "../src/lib/file-diff";
@@ -27,6 +30,117 @@ const built = {
   durationMs: 1,
   warnings: [],
 };
+
+{
+  assert.deepEqual(
+    coverageMissingFromFacts([
+      "缺覆盖:低库存零边界闭环",
+      "缺覆盖:低库存零边界闭环",
+      "测试目标有误",
+    ]),
+    ["低库存零边界闭环"],
+  );
+  console.log("Orchestrator · ✓ 场景覆盖缺口以结构化参数回喂 QA");
+}
+
+{
+  const evidence = qaTriageEvidence(
+    ["找不到区域「休息倒计时 5:00」"],
+    {
+      verdicts: [{
+        gate: "test-plan",
+        name: "测试计划体检",
+        ok: false,
+        blocking: false,
+        facts: ["target「休息倒计时 5:00」不在源码或真实界面"],
+        durationMs: 0,
+      }],
+    },
+  );
+  assert.equal(evidence.length, 2);
+  assert.match(evidence[1], /^测试计划预检警告：/);
+  console.log("Orchestrator · ✓ QA 归因保留命中同一目标的计划预检证据");
+}
+
+{
+  const prompt = pmPrompt("做一个番茄钟");
+  assert.match(prompt.system, /自动转换条件/);
+  assert.match(prompt.system, /自然完成才计数，手动跳过不计数/);
+  console.log("Orchestrator · ✓ 计时与状态机需求必须定义转换和计数语义");
+}
+
+{
+  const prompt = qaPrompt(
+    {
+      title: "会议预订",
+      oneLiner: "预订会议室",
+      targetUsers: ["员工"],
+      coreFeatures: [{ name: "选择时段", description: "使用下拉框选择", priority: "P0" }],
+      userFlow: ["选择时间"],
+      nonGoals: [],
+    },
+    [{ path: "/App.js", content: "<select aria-label=\"开始时间\"><option>17:30</option></select>" }],
+  );
+  assert.match(prompt.system, /原生下拉框\(select\)也使用 fill/);
+  assert.match(prompt.system, /"target":"开始时间","value":"17:30"/);
+  assert.match(prompt.system, /加减步进器不是输入框/);
+  assert.match(prompt.system, /aria-label 是定位名称，不保证整句作为可见文字渲染/);
+  assert.match(prompt.system, /计算结果、统计卡片等只读金额绝不是输入框/);
+  assert.match(prompt.system, /不能仅因为“无效”就假设一定存在 aria-invalid/);
+  console.log("Orchestrator · ✓ QA 对原生下拉框使用 fill 选择而不是点击 option");
+}
+
+{
+  const prompt = qaPrompt(
+    {
+      title: "报销",
+      oneLiner: "记录费用",
+      targetUsers: ["员工"],
+      coreFeatures: [{ name: "分类筛选", description: "按分类看记录", priority: "P0" }],
+      userFlow: ["点击分类"],
+      nonGoals: [],
+    },
+    [{ path: "/App.js", content: "<button>餐饮</button>" }],
+    undefined,
+    undefined,
+    { clickables: ["餐饮"], inputs: [], regions: [], headings: ["报销"] },
+  );
+  assert.match(prompt.user, /本版用例中禁止出现任何 `\*Within` 动作/);
+  assert.match(prompt.user, /筛选按钮「餐饮\/办公」/);
+  console.log("Orchestrator · ✓ QA 不会把筛选按钮误当成内容区域");
+}
+
+{
+  const repair = deliveryRepairDispatch([
+    "页面没有任何标题元素(h1/h2/h3),信息层级不清楚",
+  ]);
+  assert.equal(repair.next, "engineer");
+  assert.match(repair.reason, /当前实现缺陷/);
+  assert.match(repair.brief, /修复代码/);
+  console.log("Orchestrator · ✓ 交付 DOM/CSS 硬伤直接交给工程师修当前实现");
+}
+
+{
+  const prompt = qaTriagePrompt({
+    prd: {
+      title: "会议室预订",
+      oneLiner: "预订会议室",
+      targetUsers: ["员工"],
+      coreFeatures: [{ name: "快速预订", description: "点击空闲时段预订", priority: "P0" }],
+      userFlow: ["选择会议室"],
+      nonGoals: ["不提供会议室管理"],
+    },
+    design: { dataModel: [], pages: [], notes: "会议室是产品基础资源" },
+    failures: ["找不到可点击的「会议室A 08:00-08:30 空闲」"],
+    screen: { clickables: ["我的预订"], inputs: [], regions: ["我的预订"] },
+  });
+  assert.match(prompt.system, /漏了静态配置或种子数据/);
+  assert.match(prompt.system, /报销单、训练记录等本来就由用户创建/);
+  assert.match(prompt.system, /绝不能用缺种子数据解释后续失败/);
+  assert.match(prompt.user, /平台界面探查/);
+  assert.match(prompt.user, /我的预订/);
+  console.log("Orchestrator · ✓ QA 归因能看到真实空页面并识别缺失基础资源");
+}
 
 {
   const expected = {

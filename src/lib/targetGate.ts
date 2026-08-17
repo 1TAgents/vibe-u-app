@@ -164,6 +164,29 @@ export function checkTargets(
         (name.length >= 2 && target.length > name.length && target.startsWith(name)),
     );
   /**
+   * JSX 的动态可访问名称常由多个源码片段拼接，例如
+   * `${phaseLabel}倒计时 ${timeStr}`，而 phaseLabel 的候选值「专注/休息」定义在
+   * 别处。整串「休息倒计时」不会字面出现在源码，但每个语义片段都存在，执行时
+   * 确实能生成。用长度至少为 2 的已知片段做完整分词，既放行这种组合，又不会把
+   * 「票数」仅因源码里有单字「票」而误放行。
+   */
+  const composableFromKnownParts = (value: string, entered: Set<string>) => {
+    if (value.length < 4) return false;
+    const reachable = new Set<number>([0]);
+    for (let start = 0; start < value.length; start++) {
+      if (!reachable.has(start)) continue;
+      for (let end = start + 2; end <= value.length; end++) {
+        const part = value.slice(start, end);
+        const known =
+          source.includes(part) ||
+          realNames.some((name) => name.includes(part)) ||
+          [...entered].some((item) => item.includes(part));
+        if (known) reachable.add(end);
+      }
+    }
+    return reachable.has(value.length);
+  };
+  /**
    * 与执行器的区域宽松匹配保持一致：模型常给标题补一个描述性后缀，
    * 「想读书架」「待审批列表」「待办列」都可能指向标题为「想读/待审批/待办」
    * 的唯一容器。探查尚未造出数据时看不到这些动态区域，但源码里会有标题词根。
@@ -221,6 +244,7 @@ export function checkTargets(
         for (const v of entered) {
           if (v.includes(nw) || nw.includes(v)) return false;
         }
+        if (composableFromKnownParts(nw, entered)) return false;
         return true;
       });
 

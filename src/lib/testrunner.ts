@@ -85,6 +85,8 @@ export interface TestReport {
 const SETTLE_MS = 700;
 /** 断言最多重试多久(数据是异步加载的,不能一次没看到就判失败) */
 const ASSERT_TIMEOUT_MS = 4000;
+/** 短暂 UI 反馈走真实时间；达到一秒的业务计时才交给 advanceTime。 */
+const FAKE_TIMER_MIN_DELAY_MS = 1000;
 
 export async function runTests(
   html: string,
@@ -871,9 +873,12 @@ export function failureSignature(failures: TestFailure[]): string {
     .join("\n");
 }
 
-/** 页面文字和模型写下的期望文字必须用同一套规则比较。 */
+/**
+ * 页面文字和模型写下的期望文字必须用同一套规则比较。
+ * 中点/项目符号只是状态标签的视觉分隔，不承载业务语义。
+ */
 function normalizeText(value: string): string {
-  return value.replace(/\s+/g, "").trim();
+  return value.replace(/[·•・,，]/g, "").replace(/\s+/g, "").trim();
 }
 
 /**
@@ -936,6 +941,7 @@ interface FakeTimer {
 
 interface FakeClock {
   now: number;
+  originMs: number;
   nextId: number;
   timers: FakeTimer[];
 }
@@ -946,7 +952,7 @@ const clocks = new WeakMap<DOMWindow, FakeClock>();
 function getClock(win: DOMWindow): FakeClock {
   let c = clocks.get(win);
   if (!c) {
-    c = { now: 0, nextId: 1, timers: [] };
+    c = { now: 0, originMs: Date.now(), nextId: 1, timers: [] };
     clocks.set(win, c);
   }
   return c;
@@ -963,6 +969,9 @@ function getClock(win: DOMWindow): FakeClock {
  */
 function installFakeClock(win: DOMWindow) {
   const clock = getClock(win);
+  // 结束时间型计时器通常用 endAt - Date.now()，只推进回调队列却不推进
+  // Date.now 会让所有回调都认为时间没走。两者必须共用同一虚拟时间轴。
+  win.Date.now = () => clock.originMs + clock.now;
   const originalSetTimeout = win.setTimeout.bind(win);
   const originalClearTimeout = win.clearTimeout.bind(win);
   const schedule = (
@@ -988,10 +997,10 @@ function installFakeClock(win: DOMWindow) {
   };
   win.setInterval = ((cb: (...args: unknown[]) => void, delay?: number, ...args: unknown[]) =>
     schedule(cb, delay ?? 0, delay ?? 0, args)) as typeof win.setInterval;
-  // 只接管 delay > 0 的 setTimeout。jsdom 没有 MessageChannel,React 的渲染调度
-  // 走真实 setTimeout(0) —— 若连它也抓进假时钟,首屏就永远渲染不出来。
+  // 只接管达到业务计时粒度的 setTimeout。React 调度与短暂 UI 反馈必须走真实
+  // 时间；否则首屏或点击后的结果会永远不渲染。倒计时从 1000ms 起仍可推进。
   win.setTimeout = ((cb: (...args: unknown[]) => void, delay?: number, ...args: unknown[]) =>
-    (delay ?? 0) <= 0
+    (delay ?? 0) < FAKE_TIMER_MIN_DELAY_MS
       ? originalSetTimeout(cb, delay ?? 0, ...args)
       : schedule(cb, delay ?? 0, null, args)) as typeof win.setTimeout;
   win.clearTimeout = ((id?: number) => {

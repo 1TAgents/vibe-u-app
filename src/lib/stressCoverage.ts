@@ -16,6 +16,7 @@
  */
 
 import type { QaStepSnapshot } from "./events";
+import type { TestCase, TestStep } from "./testrunner";
 
 /** 用例步骤快照 —— 直接用事件模型的 QaStepSnapshot,避免两份形状漂移 */
 export type QaStepLike = QaStepSnapshot;
@@ -94,6 +95,12 @@ export function qaCaseText(qaHistory: QaHistoryLike): string {
 export function mortgageExpectationIssues(cases: QaCaseLike[]): string[] {
   const issues: string[] = [];
   const norm = (value: string) => value.replace(/\s+/g, "");
+  const fillBy = (fills: Map<string, number>, aliases: string[]) => {
+    for (const [label, value] of fills) {
+      if (aliases.some((alias) => label.includes(alias))) return value;
+    }
+    return undefined;
+  };
 
   for (const testCase of cases) {
     const steps = testCase.steps ?? [];
@@ -104,10 +111,10 @@ export function mortgageExpectationIssues(cases: QaCaseLike[]): string[] {
       if (Number.isFinite(parsed)) fills.set(norm(step.target), parsed);
     }
 
-    const price = fills.get("房屋总价");
-    const downPercent = fills.get("首付比例");
-    const annualRate = fills.get("年利率");
-    const years = fills.get("贷款年限");
+    const price = fillBy(fills, ["房屋总价", "总价"]);
+    const downPercent = fillBy(fills, ["首付比例", "首付"]);
+    const annualRate = fillBy(fills, ["年利率", "利率"]);
+    const years = fillBy(fills, ["贷款年限", "年限"]);
     const claimsMonthly = [testCase.name, ...(testCase.covers ?? [])].some((text) => /月供/.test(text));
     if (!claimsMonthly || !price || downPercent === undefined || annualRate === undefined || !years) continue;
     if (downPercent < 0 || downPercent >= 100 || annualRate < 0) continue;
@@ -120,11 +127,29 @@ export function mortgageExpectationIssues(cases: QaCaseLike[]): string[] {
       : principal * monthlyRate * (1 + monthlyRate) ** months / ((1 + monthlyRate) ** months - 1);
     const interest = monthly * months - principal;
     const expectedNumbers = steps
-      .filter((step) => step.action === "expectText" || step.action === "expectTextWithin")
-      .flatMap((step) => [...(step.text ?? "").matchAll(/[¥￥]\s*([\d,]+(?:\.\d+)?)/g)])
-      .map((match) => Number(match[1].replace(/,/g, "")))
+      .filter((step) =>
+        step.action === "expectText"
+        || step.action === "expectTextWithin"
+        || step.action === "expectNumberWithin",
+      )
+      .flatMap((step) => {
+        const text = String(step.action === "expectNumberWithin" ? (step.value ?? "") : (step.text ?? ""));
+        const currency = [...text.matchAll(/[¥￥]\s*([\d,]+(?:\.\d+)?)/g)]
+          .map((match) => match[1]);
+        // 结果卡片常把单位放在相邻节点，QA 会直接断言纯数值「8.33」。只要整条
+        // 断言本身就是一个数值（可带元/万元），它和带 ¥ 的金额一样是确定证据；
+        // 不从普通句子里抓任意数字，避免把期限、比例等说明误当计算结果。
+        const plain = text.trim().match(/^([\d,]+(?:\.\d+)?)\s*(?:万?元)?$/);
+        return plain ? [...currency, plain[1]] : currency;
+      })
+      .map((value) => Number(value.replace(/,/g, "")))
       .filter(Number.isFinite);
-    const near = (value: number) => expectedNumbers.some((candidate) => Math.abs(candidate - value) <= 0.02);
+    // 总价输入常以「万元」为单位，而月供可能以元、总利息仍以万元展示。
+    // 两种展示单位都属于正确结果，门只负责复算数值，不强迫产品统一单位。
+    const near = (value: number) => expectedNumbers.some((candidate) =>
+      Math.abs(candidate - value) <= 0.02
+      || Math.abs(candidate - value * 10_000) <= 0.02,
+    );
 
     if (!near(monthly)) {
       issues.push(
@@ -140,6 +165,134 @@ export function mortgageExpectationIssues(cases: QaCaseLike[]): string[] {
   }
 
   return issues;
+}
+
+/**
+ * Mortgage acceptance inputs are chosen by Tess, but the expected arithmetic is
+ * platform-owned evidence. Rewrite the first monetary result assertions after
+ * Calculate to monthly payment, total interest, and principal. This avoids
+ * spending five model rounds asking a language model to repeat deterministic
+ * exponent arithmetic, while keeping its scenario and interaction choices.
+ */
+export function normalizeMortgageExpectations(cases: TestCase[], source = ""): TestCase[] {
+  const norm = (value: string) => value.replace(/\s+/g, "");
+  const fillBy = (fills: Map<string, number>, aliases: string[]) => {
+    for (const [label, value] of fills) {
+      if (aliases.some((alias) => label.includes(alias))) return value;
+    }
+    return undefined;
+  };
+  const moneyPattern = /^(?:[¥￥]\s*)?[\d,]+(?:\.\d+)?\s*(?:万?元)?$/;
+  const formatLike = (sample: string, value: number) => {
+    const currency = sample.match(/^[¥￥]/)?.[0] ?? "";
+    const suffix = sample.match(/\s*(万?元)\s*$/)?.[1] ?? "";
+    const comma = sample.includes(",");
+    const numeric = comma
+      ? value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      : value.toFixed(2);
+    return `${currency}${numeric}${suffix ? ` ${suffix}` : ""}`;
+  };
+
+  // 同一结果卡的单位约定应在整套用例中一致。某一条用例若断言的本金恰好是
+  // 输入数值本金的 10,000 倍，就足以证明表单以「万元」输入、结果以「元」输出；
+  // 该证据也应作用到其它没有本金断言的边界用例。
+  const sourceUsesWanInputs = /(?:总价|房价)[\s\S]{0,160}万元/.test(source)
+    || /(?:totalPrice|price)\s*\*\s*(?:10_?000|10000)/i.test(source);
+  const suiteUsesWanInputs = sourceUsesWanInputs || cases.some((testCase) => {
+    const fills = new Map<string, number>();
+    for (const step of testCase.steps) {
+      if (step.action !== "fill") continue;
+      const value = Number(String(step.value).replace(/,/g, ""));
+      if (Number.isFinite(value)) fills.set(norm(step.target), value);
+    }
+    const price = fillBy(fills, ["房屋总价", "购房总价", "总价"]);
+    const downPercent = fillBy(fills, ["首付比例", "首付"]);
+    if (!price || downPercent === undefined) return false;
+    const principal = price * (1 - downPercent / 100);
+    return testCase.steps.some((step) => {
+      let sample: string | undefined;
+      if (step.action === "expectText" || step.action === "expectTextWithin") sample = step.text;
+      else if (step.action === "expectNumberWithin" || step.action === "expectValue") sample = step.value;
+      if (!sample || !moneyPattern.test(sample.trim())) return false;
+      const candidate = Number(sample.replace(/[¥￥,\s]|万?元/g, ""));
+      return Number.isFinite(candidate) && Math.abs(candidate - principal * 10_000) <= 0.02;
+    });
+  });
+
+  return cases.map((testCase) => {
+    const fills = new Map<string, number>();
+    for (const step of testCase.steps) {
+      if (step.action !== "fill") continue;
+      const value = Number(String(step.value).replace(/,/g, ""));
+      if (Number.isFinite(value)) fills.set(norm(step.target), value);
+    }
+    const price = fillBy(fills, ["房屋总价", "总价"]);
+    const downPercent = fillBy(fills, ["首付比例", "首付"]);
+    const annualRate = fillBy(fills, ["年利率", "利率"]);
+    const years = fillBy(fills, ["贷款年限", "年限"]);
+    if (!price || downPercent === undefined || annualRate === undefined || !years) return testCase;
+    if (downPercent < 0 || downPercent >= 100 || annualRate < 0) return testCase;
+
+    const principal = price * (1 - downPercent / 100);
+    const months = years * 12;
+    const monthlyRate = annualRate / 100 / 12;
+    const monthly = monthlyRate === 0
+      ? principal / months
+      : principal * monthlyRate * (1 + monthlyRate) ** months / ((1 + monthlyRate) ** months - 1);
+    const interest = monthly * months - principal;
+    const explicitYuanResult = testCase.steps.some((step) => {
+      if (
+        (step.action !== "expectNumberWithin" && step.action !== "expectValue")
+        || !/贷款总额|贷款本金|本金/.test(step.target)
+      ) {
+        return false;
+      }
+      const candidate = Number(step.value.replace(/,/g, ""));
+      return Number.isFinite(candidate) && Math.abs(candidate - principal * 10_000) <= 0.02;
+    });
+    const priceIsWan = /(?:总价|房价)[^，,。\n]*万/.test(testCase.name)
+      || explicitYuanResult
+      || suiteUsesWanInputs;
+    const totalPayment = monthly * months;
+    // 无区域语义的纯文本断言按结果卡常见顺序：月供、总利息、本金、总还款额。
+    // 过去只改前三项，会让第四项继续保留模型心算出的错误数字。
+    const expected = [monthly, interest, principal, totalPayment];
+    const displayValue = (sampleText: string, value: number, forceYuan = false) => {
+      const sample = Number(sampleText.replace(/[¥￥,\s]|万?元/g, ""));
+      const displayInYuan = priceIsWan
+        && (forceYuan || sampleText.includes(",") || sample >= 1000);
+      return value * (displayInYuan ? 10_000 : 1);
+    };
+    let resultIndex = 0;
+    let calculated = false;
+    const steps = testCase.steps.map((step): TestStep => {
+      if (step.action === "click" && /计算/.test(step.target)) {
+        calculated = true;
+        return step;
+      }
+      if (!calculated || resultIndex >= expected.length) return step;
+      if (step.action === "expectNumberWithin" || step.action === "expectValue") {
+        let semanticValue: number | undefined;
+        if (/月供/.test(step.target)) semanticValue = monthly;
+        else if (/总利息|利息总/.test(step.target)) semanticValue = interest;
+        else if (/贷款总额|贷款本金|本金/.test(step.target)) semanticValue = principal;
+        else if (/还款总|总还款|总金额/.test(step.target)) semanticValue = totalPayment;
+        if (semanticValue === undefined) return step;
+        const value = displayValue(step.value, semanticValue, explicitYuanResult);
+        return {
+          action: "expectNumberWithin",
+          target: step.target,
+          value: value.toFixed(2),
+        };
+      }
+      if (step.action !== "expectText" && step.action !== "expectTextWithin") return step;
+      if (!moneyPattern.test(step.text.trim())) return step;
+      const value = displayValue(step.text, expected[resultIndex++], suiteUsesWanInputs);
+      const text = formatLike(step.text, value);
+      return { ...step, text };
+    });
+    return { ...testCase, steps };
+  });
 }
 
 const normalizedFeatureName = (value: string) => value.replace(/\s+/g, "").toLocaleLowerCase();
