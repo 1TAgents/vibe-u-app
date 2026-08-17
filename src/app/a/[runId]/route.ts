@@ -1,4 +1,10 @@
-import { appHtml, buildApp, buildErrorPage, notFoundPage } from "@/lib/builder";
+import {
+  appHtml,
+  buildApp,
+  buildErrorPage,
+  hasUsableGeneratedCss,
+  notFoundPage,
+} from "@/lib/builder";
 import { foldEvents } from "@/lib/fold";
 import { withRuntimeFiles } from "@/lib/runtime-files";
 import { getStore, type AppBundleStage } from "@/lib/store";
@@ -32,7 +38,9 @@ export async function GET(
   const stage: AppBundleStage = embed ? "candidate" : "published";
   const stored = await store.getAppBundle(runId, stage);
   const title = run.label || run.prompt || "Glassbox App";
-  if (stored) {
+  // 旧版本曾在 Tailwind 编译失败时把空 CSS 当成功 bundle 存库。不能继续返回
+  // 那份浏览器默认样式；落到下方，用事件里的源码按当前构建器自动重建。
+  if (stored && hasUsableGeneratedCss(stored.css)) {
     return html(
       appHtml({
         title,

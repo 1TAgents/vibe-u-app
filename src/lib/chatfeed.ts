@@ -51,6 +51,10 @@ export function toFeed(state: RunState): FeedItem[] {
 
   /* --- 角色发言 --- */
   state.timeline.forEach((n, i) => {
+    // dispatch 的最终结果紧接着由 dispatch.decided 投影为完整派单卡片；accept / triage
+    // 也各有带结论的结果卡。保留“派单判断完成”“做完了”只会把一次工作说两遍。
+    // 运行中与失败态仍保留，用户需要知道当前在做什么、哪里失败了。
+    if (n.phase === "done" && ["dispatch", "accept", "triage"].includes(n.id)) return;
     const role = ROLES[n.id] ?? { name: n.id, title: n.id, accent: "ink" };
     items.push({
       id: `n${i}`,

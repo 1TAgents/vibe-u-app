@@ -129,3 +129,68 @@ const built = {
   assert.match(feed, /界面探查完成/);
   console.log("Orchestrator · ✓ 调度、门禁、预算、界面探查可被 fold 与群聊投影");
 }
+
+{
+  const event = (seq: number, value: RunEvent): Envelope<RunEvent> => ({
+    runId: "feed-dedupe",
+    seq,
+    ts: 2000 + seq,
+    event: value,
+  });
+  const usage = {
+    promptTokens: 1,
+    completionTokens: 1,
+    reasoningTokens: 0,
+    totalTokens: 2,
+    costUsd: 0,
+  };
+  const state = foldEvents([
+    event(0, { type: "run.started", prompt: "测试群聊", model: "m" }),
+    event(1, { type: "node.started", node: "dispatch", role: "Piper", model: "m" }),
+    event(2, {
+      type: "node.finished",
+      node: "dispatch",
+      usage,
+      durationMs: 10,
+      prompt: "p",
+      raw: "r",
+    }),
+    event(3, {
+      type: "dispatch.decided",
+      round: 1,
+      next: "pm",
+      reason: "PRD 尚未创建",
+      brief: "把需求写成 PRD",
+      budget: { dispatches: 1, maxDispatches: 20 },
+    }),
+    event(4, { type: "node.started", node: "accept", role: "Ida", model: "m" }),
+    event(5, {
+      type: "node.finished",
+      node: "accept",
+      usage,
+      durationMs: 10,
+      prompt: "p",
+      raw: "r",
+    }),
+    event(6, {
+      type: "accept.result",
+      attempt: 1,
+      accepted: true,
+      dimensions: {
+        functional: { ok: true, note: "功能完整" },
+        usability: { ok: true, note: "路径清楚" },
+        visual: { ok: true, note: "视觉匹配" },
+      },
+      issues: [],
+      hardIssues: [],
+      summary: "功能、体验与视觉均达到交付标准",
+    }),
+  ]);
+  const feed = toFeed(state);
+  const text = feed.map((item) => item.text).join("\n");
+  assert.doesNotMatch(text, /派单判断完成|^做完了$/m, "过程占位不得单独留在群聊");
+  assert.equal(feed.filter((item) => item.id.startsWith("dispatch")).length, 1);
+  assert.match(text, /第 1 轮.*PRD 尚未创建/);
+  assert.match(text, /验收通过,可以交付.*功能、体验与视觉均达到交付标准/);
+  console.log("Orchestrator · ✓ 派单与验收只显示合并后的具体结果，不重复播报占位消息");
+}

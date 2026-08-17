@@ -39,6 +39,11 @@ export interface BuildFailure {
 
 export type BuildResult = BuildSuccess | BuildFailure;
 
+/** 历史版本曾把 Tailwind 失败降级为空字符串并存库；空 CSS 不能当成可复用 bundle。 */
+export function hasUsableGeneratedCss(css: string): boolean {
+  return css.trim().length > 0;
+}
+
 const ENTRY = "/index.js";
 
 // 只允许生成物使用平台明确提供的运行时包。实际文件路径必须在请求发生时动态解析：
@@ -237,11 +242,17 @@ async function buildCss(files: GeneratedFile[]): Promise<string> {
       base: process.cwd(),
       onDependency: () => {},
     });
-    return compiler.build(candidates);
+    const css = compiler.build(candidates);
+    if (!hasUsableGeneratedCss(css)) {
+      throw new Error("Tailwind 没有生成任何 CSS");
+    }
+    return css;
   } catch (err) {
-    // 样式编译失败不应该让整个应用发布不出去 —— 宁可少点样式,也要能用
-    console.error("[builder] Tailwind 编译失败,降级为无样式:", err);
-    return "";
+    // 样式是交付物的一部分。吞掉这里的错误会让一份写满 Tailwind 类名的页面
+    // 退化成浏览器默认 HTML，却仍被构建门、QA 和交付验收判绿。
+    throw new Error(
+      `Tailwind CSS 编译失败:${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 }
 

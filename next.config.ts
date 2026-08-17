@@ -15,6 +15,9 @@ const generatedAppRuntime = [
   "./node_modules/@tailwindcss/node/**/*",
   "./node_modules/@tailwindcss/oxide/**/*",
   "./node_modules/@tailwindcss/oxide-*/**/*",
+  // @tailwindcss/node 在运行期解析 `@import "tailwindcss"`，静态追踪只能看见
+  // package.json，看不见 exports 指向的实际 CSS 文件；必须把整个包带进函数。
+  "./node_modules/tailwindcss/**/*",
   "./node_modules/lightningcss/**/*",
   "./node_modules/lightningcss-*/**/*",
 ];

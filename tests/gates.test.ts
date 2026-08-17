@@ -21,7 +21,7 @@ function ok(label: string) {
 const goodApp = withRuntimeFiles([
   {
     path: "/App.js",
-    content: `export default function App(){ return <h1>记账本</h1>; }`,
+    content: `export default function App(){ return <h1 className="text-2xl text-[#1e3a5f]">记账本</h1>; }`,
   },
 ]);
 
@@ -36,7 +36,7 @@ const leakyApp = withRuntimeFiles([
     content: `import { useEffect } from "react";
 export default function App(){
   useEffect(() => { setInterval(() => console.log("tick"), 1000); }, []);
-  return <h1>番茄钟</h1>;
+  return <h1 className="text-2xl text-[#1e3a5f]">番茄钟</h1>;
 }`,
   },
 ]);

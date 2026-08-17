@@ -124,26 +124,43 @@ export async function collectDeliveryEvidence(
 
     const visibleText = root ? visibleTextOf(root).slice(0, 900) : "";
 
+    const styleFacts = extractStyleFacts(css);
+    const cssBytes = Buffer.byteLength(css, "utf8");
+    const hardIssues = findHardIssues({
+      clickables,
+      inputEls,
+      doc,
+      headings,
+      visibleText,
+    });
+    hardIssues.unshift(...styleEvidenceIssues(css, styleFacts));
+
     return {
-      ...extractStyleFacts(css),
-      cssBytes: Buffer.byteLength(css, "utf8"),
+      ...styleFacts,
+      cssBytes,
       headings,
       buttons,
       inputs,
       visibleText,
       nodeCount: root ? root.querySelectorAll("*").length : 0,
       emptySections: findEmptySections(doc),
-      hardIssues: findHardIssues({
-        clickables,
-        inputEls,
-        doc,
-        headings,
-        visibleText,
-      }),
+      hardIssues,
     };
   } finally {
     dom.window.close();
   }
+}
+
+/** 视觉证据不足不是“主观上还行”，而是平台无法证明样式真的进入了交付物。 */
+export function styleEvidenceIssues(
+  css: string,
+  facts = extractStyleFacts(css),
+): string[] {
+  const issues: string[] = [];
+  if (!css.trim()) issues.push("构建产物没有任何业务 CSS，页面会退化为浏览器默认样式");
+  if (facts.palette.length === 0) issues.push("编译后 CSS 未采到任何颜色，无法验证视觉方案的色板");
+  if (facts.fontSizes.length === 0) issues.push("编译后 CSS 未采到任何字号，无法验证信息层级");
+  return issues;
 }
 
 /**

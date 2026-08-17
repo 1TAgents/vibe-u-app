@@ -417,6 +417,16 @@ ${PROSE_JSON_RULE}`,
   };
 }
 
+/** Luna 与 Cody 共用同一份能力边界，避免设计出运行时根本承载不了的方案。 */
+export const STYLE_RUNTIME_CAPABILITIES = `平台当前支持的界面能力(必须在此范围内设计):
+- React 19 单页应用，源码为 .js 文件中的 JSX；不使用路由库。
+- Tailwind CSS v4 构建期工具类：支持静态完整类名、响应式前缀、hover/focus/disabled、
+  data/aria 状态变体和方括号任意值(例如 bg-[#1e3a5f]、max-w-[960px])。
+- Lucide React 图标；少量必须由运行时数值决定的几何值可以用 React inline style。
+- 不支持外部 CSS 框架、Tailwind 插件或自定义配置、CSS Modules、独立 .css 文件、
+  外部字体、外部图片/CDN 资源，也不要把关键视觉建立在自定义 keyframes 上。
+- 设计稿中的颜色、字阶、间距、布局和交互状态都必须能直接翻译为上述 Tailwind 类名。`;
+
 /** 产品设计师先把 PRD 翻译成用户体验与视觉系统，而不是等架构师决定页面。 */
 export function visualDesignerPrompt(userRequest: string, prd: Prd) {
   return {
@@ -430,9 +440,10 @@ export function visualDesignerPrompt(userRequest: string, prd: Prd) {
 产品功能边界由 Ida 的 PRD 决定。你只能设计这些功能如何被使用和呈现，不得自行新增
 清空全部、筛选、搜索、统计、编辑等 PRD 没有的功能，也不得删掉任何 P0 功能。
 
-你还要先定义核心用户旅程、导航方式与关键界面状态。技术边界:工程师使用 React +
-Tailwind CSS + Lucide 图标；不加载外部图片和字体；桌面与移动端都要成立。颜色请给出
-明确的 Tailwind 色阶或十六进制值。`,
+你还要先定义核心用户旅程、导航方式与关键界面状态。桌面与移动端都要成立，颜色请给出
+明确的 Tailwind 色阶或十六进制值。
+
+${STYLE_RUNTIME_CAPABILITIES}`,
     user: `用户需求:${userRequest}
 
 PRD:
@@ -510,8 +521,8 @@ ${PROSE_JSON_RULE}`,
  * 不能因为「只是改一下」就少说,少说一条就可能把应用改坏。
  */
 export const RUNTIME_CONSTRAINTS = `运行环境(硬约束,违反会导致白屏):
-- React 18 + 函数组件 + Hooks。**只写 .js 文件,不要 TypeScript。**
-- 样式使用 Tailwind CSS 工具类,不要写 import "./x.css"。
+- React 19 + 函数组件 + Hooks。**只写 .js 文件,不要 TypeScript。**
+- 样式只使用平台支持的 Tailwind CSS 工具类,不要写 import "./x.css"。
 - **Tailwind 类名必须在源码里字面写全**,不能拼接。样式在构建期按源码扫描生成,
   拼出来的类名扫不到,会静默丢样式。
   错:\`className={\`bg-\${color}-500\`}\`
@@ -523,7 +534,9 @@ export const RUNTIME_CONSTRAINTS = `运行环境(硬约束,违反会导致白屏
   App.js 只负责组装与状态,每个有独立职责的 UI 拆到 \`/components/Xxx.js\`,
   纯函数工具拆到 \`/utils/xxx.js\`,用相对路径 import(如 \`./components/Xxx\`)。
   单个文件尽量不超过 150 行。
-- 数据持久化只能用平台注入的 \`db\` 模块。`;
+- 数据持久化只能用平台注入的 \`db\` 模块。
+
+${STYLE_RUNTIME_CAPABILITIES}`;
 
 /** 把“高级感”拆成模型可以执行的约束。只说“好看一点”会稳定地产生平庸的 AI 模板。 */
 export const UI_QUALITY_RULES = `界面质量门(必须全部遵守):
