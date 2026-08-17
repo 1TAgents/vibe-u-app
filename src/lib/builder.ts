@@ -69,7 +69,7 @@ const BUNDLED_RUNTIME_MODULES = new Map<string, string>([
  */
 function virtualFs(files: Map<string, string>): esbuild.Plugin {
   return {
-    name: "glassbox-virtual-fs",
+    name: "vibeu-virtual-fs",
     setup(build) {
       build.onResolve({ filter: /.*/ }, (args) => {
         // 只接管生成物自己的相对引用。
@@ -300,7 +300,7 @@ export function appHtml(opts: {
 <title>${escapeHtml(opts.title)}</title>
 <style>${opts.css}</style>
 <style>body { margin: 0; font-family: system-ui, -apple-system, "PingFang SC", sans-serif; }</style>
-<script>window.__GLASSBOX__ = ${config};</script>
+<script>window.__VIBEU__ = ${config};</script>
 </head>
 <body>
 <div id="root"></div>
@@ -342,7 +342,7 @@ function shell(title: string, inner: string): string {
 /** 找不到应用时的页面 */
 export function notFoundPage(message: string): string {
   return shell(
-    "Glassbox",
+    "VibeU",
     "<h1>" + escapeHtml(message) + '</h1><p style="font-size:13px"><a href="/">去造一个 →</a></p>',
   );
 }
@@ -356,7 +356,7 @@ export function buildErrorPage(runId: string, errors: string[]): string {
   const detail = escapeHtml(errors.join("\n\n"));
   const link = "/workspace?run=" + encodeURIComponent(runId);
   return shell(
-    "构建失败 · Glassbox",
+    "构建失败 · VibeU",
     "<h1>这个应用当前无法构建</h1><pre>" +
       detail +
       '</pre><p style="font-size:13px;margin-top:16px"><a href="' +

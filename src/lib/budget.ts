@@ -42,7 +42,7 @@ export interface BudgetLimits {
  * 先只记录,等积累了足够多 run 的分布再决定要不要设线。
  */
 export const DEFAULT_LIMITS: BudgetLimits = Object.freeze({
-  maxDispatches: 20,
+  maxDispatches: 50,
   maxSameRole: 3,
   maxSignature: 3,
 });

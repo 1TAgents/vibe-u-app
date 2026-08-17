@@ -34,6 +34,20 @@ export interface AppRow {
 }
 
 /**
+ * 正在执行的任务周期之外，老板追加的下一轮要求。
+ *
+ * 它是操作队列而不是事件流：只有真正开始处理时才会写入 chat.user，避免队列请求
+ * 与正在高速追加的模型事件争抢同一个 seq。pending/processing 则用于刷新和多端恢复。
+ */
+export interface QueuedChange {
+  id: string;
+  runId: string;
+  text: string;
+  status: "pending" | "processing";
+  createdAt: number;
+}
+
+/**
  * 已编译应用的自包含产物。
  *
  * candidate 给工作区预览和浏览器校验使用；published 是最近一次通过校验的稳定版本。
@@ -55,6 +69,19 @@ export interface Store {
   listRuns(limit: number): Promise<RunRecord[]>;
   appendEvents(runId: string, events: Envelope<RunEvent>[]): Promise<void>;
   readEvents(runId: string): Promise<Envelope<RunEvent>[]>;
+
+  enqueueChange(runId: string, text: string): Promise<QueuedChange>;
+  listQueuedChanges(runId: string): Promise<QueuedChange[]>;
+  /** pending → processing 的原子认领；已删除或已被别处认领时返回 null。 */
+  claimQueuedChange(runId: string, id: string): Promise<QueuedChange | null>;
+  setQueuedChangeStatus(
+    runId: string,
+    id: string,
+    status: QueuedChange["status"],
+  ): Promise<void>;
+  /** 只删除尚未开工的项目，用于用户撤回；状态已变化时返回 false。 */
+  removePendingQueuedChange(runId: string, id: string): Promise<boolean>;
+  removeQueuedChange(runId: string, id: string): Promise<void>;
 
   /** 保存候选构建；只有浏览器校验通过后才会晋升为公开版本。 */
   saveAppBundle(runId: string, bundle: AppBundle): Promise<void>;
@@ -153,6 +180,80 @@ class FileStore implements Store {
     } catch {
       return [];
     }
+  }
+
+  private queueFile(runId: string) {
+    return path.join(this.runDir(runId), "change-queue.json");
+  }
+
+  private async readQueue(runId: string): Promise<QueuedChange[]> {
+    try {
+      return JSON.parse(await fs.readFile(this.queueFile(runId), "utf8"));
+    } catch {
+      return [];
+    }
+  }
+
+  async enqueueChange(runId: string, text: string) {
+    return this.serialize(async () => {
+      const queue = await this.readQueue(runId);
+      const item: QueuedChange = {
+        id: randomId(),
+        runId,
+        text,
+        status: "pending",
+        createdAt: Date.now(),
+      };
+      queue.push(item);
+      await fs.mkdir(this.runDir(runId), { recursive: true });
+      await fs.writeFile(this.queueFile(runId), JSON.stringify(queue, null, 2));
+      return item;
+    });
+  }
+
+  async listQueuedChanges(runId: string) {
+    return (await this.readQueue(runId)).sort((a, b) => a.createdAt - b.createdAt);
+  }
+
+  async claimQueuedChange(runId: string, id: string) {
+    return this.serialize(async () => {
+      const queue = await this.readQueue(runId);
+      const item = queue.find((entry) => entry.id === id && entry.status === "pending");
+      if (!item) return null;
+      item.status = "processing";
+      await fs.writeFile(this.queueFile(runId), JSON.stringify(queue, null, 2));
+      return { ...item };
+    });
+  }
+
+  async setQueuedChangeStatus(runId: string, id: string, status: QueuedChange["status"]) {
+    await this.serialize(async () => {
+      const queue = await this.readQueue(runId);
+      const item = queue.find((entry) => entry.id === id);
+      if (!item) return;
+      item.status = status;
+      await fs.writeFile(this.queueFile(runId), JSON.stringify(queue, null, 2));
+    });
+  }
+
+  async removePendingQueuedChange(runId: string, id: string) {
+    return this.serialize(async () => {
+      const queue = await this.readQueue(runId);
+      const index = queue.findIndex(
+        (entry) => entry.id === id && entry.status === "pending",
+      );
+      if (index < 0) return false;
+      queue.splice(index, 1);
+      await fs.writeFile(this.queueFile(runId), JSON.stringify(queue, null, 2));
+      return true;
+    });
+  }
+
+  async removeQueuedChange(runId: string, id: string) {
+    await this.serialize(async () => {
+      const queue = (await this.readQueue(runId)).filter((entry) => entry.id !== id);
+      await fs.writeFile(this.queueFile(runId), JSON.stringify(queue, null, 2));
+    });
   }
 
   private bundleFile(runId: string) {
@@ -305,8 +406,19 @@ export class PgStore implements Store {
         published JSONB,
         updated_at BIGINT NOT NULL
       )`;
-    // 兼容早于 ord 列的既有部署;IF NOT EXISTS 让这句可以反复执行
+    await this.sql`
+      CREATE TABLE IF NOT EXISTS run_change_queue (
+        run_id TEXT NOT NULL,
+        id TEXT NOT NULL,
+        text TEXT NOT NULL,
+        status TEXT NOT NULL,
+        created_at BIGINT NOT NULL,
+        ord BIGSERIAL,
+        PRIMARY KEY (run_id, id)
+      )`;
+    // 兼容早于顺序列的既有部署；IF NOT EXISTS 允许迁移安全重放。
     await this.sql`ALTER TABLE app_rows ADD COLUMN IF NOT EXISTS ord BIGSERIAL`;
+    await this.sql`ALTER TABLE run_change_queue ADD COLUMN IF NOT EXISTS ord BIGSERIAL`;
   }
 
   async createRun(r: RunRecord) {
@@ -362,6 +474,61 @@ export class PgStore implements Store {
       ts: Number(r.ts),
       event: r.event as RunEvent,
     }));
+  }
+
+  async enqueueChange(runId: string, text: string) {
+    await this.ready;
+    const item: QueuedChange = {
+      id: randomId(),
+      runId,
+      text,
+      status: "pending",
+      createdAt: Date.now(),
+    };
+    await this.sql`
+      INSERT INTO run_change_queue (run_id, id, text, status, created_at)
+      VALUES (${runId}, ${item.id}, ${text}, ${item.status}, ${item.createdAt})`;
+    return item;
+  }
+
+  async listQueuedChanges(runId: string) {
+    await this.ready;
+    const rows = await this.sql`
+      SELECT * FROM run_change_queue
+      WHERE run_id = ${runId}
+      ORDER BY ord ASC`;
+    return rows.map(rowToQueuedChange);
+  }
+
+  async claimQueuedChange(runId: string, id: string) {
+    await this.ready;
+    const rows = await this.sql`
+      UPDATE run_change_queue SET status = ${"processing"}
+      WHERE run_id = ${runId} AND id = ${id} AND status = ${"pending"}
+      RETURNING *`;
+    return rows[0] ? rowToQueuedChange(rows[0]) : null;
+  }
+
+  async setQueuedChangeStatus(runId: string, id: string, status: QueuedChange["status"]) {
+    await this.ready;
+    await this.sql`
+      UPDATE run_change_queue SET status = ${status}
+      WHERE run_id = ${runId} AND id = ${id}`;
+  }
+
+  async removePendingQueuedChange(runId: string, id: string) {
+    await this.ready;
+    const rows = await this.sql`
+      DELETE FROM run_change_queue
+      WHERE run_id = ${runId} AND id = ${id} AND status = ${"pending"}
+      RETURNING id`;
+    return rows.length > 0;
+  }
+
+  async removeQueuedChange(runId: string, id: string) {
+    await this.ready;
+    await this.sql`
+      DELETE FROM run_change_queue WHERE run_id = ${runId} AND id = ${id}`;
   }
 
   async saveAppBundle(runId: string, bundle: AppBundle) {
@@ -459,6 +626,16 @@ function rowToApp(r: Record<string, unknown>): AppRow {
   };
 }
 
+function rowToQueuedChange(r: Record<string, unknown>): QueuedChange {
+  return {
+    id: r.id as string,
+    runId: r.run_id as string,
+    text: r.text as string,
+    status: r.status as QueuedChange["status"],
+    createdAt: Number(r.created_at),
+  };
+}
+
 /* ------------------------------- 出口 ------------------------------- */
 
 function sanitize(s: string) {
@@ -476,12 +653,10 @@ let cached: Store | null = null;
 /**
  * 适配器选择:配了 DATABASE_URL 走 Postgres,否则走本地文件。
  *
- * 这里曾经用 `require()` 做条件加载,想着"本地不配库就不加载驱动"。那是个会 100% 炸掉
- * 生产的 bug —— 路由被打包成 ESM,`require` 在那里根本不存在;而本地因为不配
- * DATABASE_URL 永远走不到那一行,于是本地怎么测都是绿的,一上线必挂。
+ * 这里使用静态 import，避免 ESM 路由在生产环境执行条件 `require()` 时失败。
  *
- * 改成静态 import。@neondatabase/serverless 是纯 HTTP 驱动、无原生依赖,
- * 无条件引入的代价可以忽略 —— 用一点点包体换掉一整类"只在生产出现"的故障,很划算。
+ * @neondatabase/serverless 是纯 HTTP 驱动且没有原生依赖，静态加载的成本可控，
+ * 同时保证本地文件模式与线上 Postgres 模式经过同一套模块加载路径。
  */
 export function getStore(): Store {
   if (cached) return cached;

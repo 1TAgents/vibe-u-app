@@ -35,7 +35,7 @@ function nodeDone(node: "pm" | "designer", role: string) {
 }
 
 // 1) 首次解析修正:run 聚合 +1、节点序数 1、被拒绝尝试失败留痕
-nodeDone("designer", "Maya");
+nodeDone("designer", "Luna");
 push({ type: "node.parse_retry", node: "designer", attempt: 1, reason: "JSON 缺左中括号" });
 assert.equal(state.parseRetries, 1, "run 级聚合应 +1");
 const first = state.timeline.find((n) => n.id === "designer");
@@ -46,7 +46,7 @@ assert.match(first?.error ?? "", /JSON 缺左中括号/);
 console.log("ParseRetry · ✓ 首次解析修正:run 聚合、节点序数、失败留痕");
 
 // 2) 同节点第二次解析修正:序数递增为 2,聚合为 2
-nodeDone("designer", "Maya");
+nodeDone("designer", "Luna");
 push({ type: "node.parse_retry", node: "designer", attempt: 2, reason: "仍缺字段" });
 assert.equal(state.parseRetries, 2, "run 级聚合应累计到 2");
 const designerEntries = state.timeline.filter((n) => n.id === "designer");
@@ -56,7 +56,7 @@ assert.equal(designerEntries[0]?.parseRetries, 1, "第一次尝试的序数不�
 console.log("ParseRetry · ✓ 同节点第二次解析修正:序数递增为 2");
 
 // 3) 不同节点各自从 1 起算,互不串扰
-nodeDone("pm", "Emma");
+nodeDone("pm", "Ida");
 push({ type: "node.parse_retry", node: "pm", attempt: 1, reason: "coreFeatures 字段类型错误" });
 assert.equal(state.parseRetries, 3, "不同节点的修正都计入 run 级聚合");
 const pmEntry = state.timeline.find((n) => n.id === "pm");
@@ -81,7 +81,7 @@ applyEvent(onlyParse, {
   runId: "t",
   seq: 0,
   ts: Date.now(),
-  event: { type: "node.started", node: "designer", role: "Maya", model: "m" },
+  event: { type: "node.started", node: "designer", role: "Luna", model: "m" },
 });
 applyEvent(onlyParse, {
   runId: "t",
@@ -96,7 +96,7 @@ console.log("ParseRetry · ✓ structureChanged 纳入解析修正(单靠它也�
 const legacy = emptyState();
 pushWith(
   legacy,
-  { type: "node.started", node: "designer", role: "Maya", model: "deepseek-v4-flash" },
+  { type: "node.started", node: "designer", role: "Luna", model: "deepseek-v4-flash" },
   0,
 );
 pushWith(

@@ -1,9 +1,8 @@
 /**
  * 交付证据采集 —— 给产品负责人验收用的客观材料。
  *
- * 为什么不能让 Emma 读源码下结论:那又变回「自我汇报」了。
- * 模型看着自己团队写的代码说「视觉挺好的」,和 Atoms 那个
- * 「Mike 说做完了但跑不起来」是同一类错误 —— 判断没有外部依据。
+ * 为什么不能让 Ida 只读源码下结论:那又变回「自我汇报」了。
+ * 模型看着自己团队写的代码说「视觉挺好的」仍然缺少外部依据。
  *
  * 所以这里从**已构建的真实产物**里确定性地提取证据:
  *   视觉 —— 编译后的 CSS 里真实用到的色板、字号阶梯、圆角、间距
@@ -50,7 +49,7 @@ export interface DeliveryEvidence {
    * 实测:一个咖啡品牌页通过了全部质量门,交付出去「豆单」却是
    * 「豆单还在整理中,稍后再来看看。」—— 功能没坏,但这个产品核心的那一屏是空的。
    *
-   * 刻意只作为**证据**交给 Emma,不当硬伤:空态本身没有错。
+   * 刻意只作为**证据**交给 Ida,不当硬伤:空态本身没有错。
    * 待办清单第一次打开当然是空的,那是在等用户输入;
    * 而品牌页的商品列表是这个产品自己该有的内容,空着就是没做完。
    * 这个区别需要结合产品形态判断,正是该由她来定的那类事。
@@ -62,7 +61,7 @@ const MAX_LIST = 14;
 
 /**
  * 在真实渲染的页面上采证。
- * 用的是与 Vera 验收完全相同的渲染路径(同一份 HTML、同一个数据服务),
+ * 用的是与 Tess 验收完全相同的渲染路径(同一份 HTML、同一个数据服务),
  * 所以「验收看到的」和「用户打开看到的」是同一个东西。
  */
 export async function collectDeliveryEvidence(
@@ -74,7 +73,7 @@ export async function collectDeliveryEvidence(
   virtualConsole.on("jsdomError", () => {});
 
   const dom = new JSDOM(html, {
-    url: `http://glassbox.local/a/${runId}`,
+    url: `http://vibeu.local/a/${runId}`,
     runScripts: "dangerously",
     pretendToBeVisual: true,
     virtualConsole,
@@ -84,7 +83,7 @@ export async function collectDeliveryEvidence(
   });
 
   try {
-    // 等首屏挂载与初次数据加载 —— 与 Vera 的等待口径保持一致
+    // 等首屏挂载与初次数据加载 —— 与 Tess 的等待口径保持一致
     await new Promise((r) => setTimeout(r, 1600));
     const doc = dom.window.document;
     const root = doc.getElementById("root");
@@ -164,10 +163,10 @@ export function styleEvidenceIssues(
 }
 
 /**
- * 首屏控件清单 —— 交给 Vera 写测试计划时看的「实际界面」。
+ * 首屏控件清单 —— 交给 Tess 写测试计划时看的「实际界面」。
  *
  * 跑 20 场景时最贵的一课:她只看得到源码,看不到界面,于是她在**猜**控件叫什么。
- * 猜错了就写出定位不到的步骤,失败后责任被归给 Alex,而 Alex 只能反过来猜
+ * 猜错了就写出定位不到的步骤,失败后责任被归给 Cody,而 Cody 只能反过来猜
  * 她想要什么名字 —— 两边互猜,三轮修复全部落空。
  *
  * 更糟的是源码里「有这个字符串」并不代表「界面上能定位到」:
@@ -192,7 +191,7 @@ export interface ScreenInventory extends ScreenNames {
    * 点开新建入口之后才出现的控件 —— 表单字段几乎都在这一层。
    *
    * 只采首屏是不够的:notes 里「输入书名」在弹窗组件里,首屏一个输入框都没有,
-   * Vera 照着源码把 fill 写成第 1 步,必然失败。她需要知道的是
+   * Tess 照着源码把 fill 写成第 1 步,必然失败。她需要知道的是
    * 「这些字段存在,但要先点『新书入架』」。
    */
   afterOpen?: { via: string } & ScreenNames;
@@ -224,7 +223,7 @@ export async function collectScreenInventory(
   const probeId = `${runId}__probe__${Date.now().toString(36)}`;
 
   const dom = new JSDOM(html, {
-    url: `http://glassbox.local/a/${probeId}`,
+    url: `http://vibeu.local/a/${probeId}`,
     runScripts: "dangerously",
     pretendToBeVisual: true,
     virtualConsole,
@@ -359,7 +358,7 @@ async function openForm(
 
 /**
  * 造一条真实记录 —— 只有有了记录,每条记录自己的操作按钮才会存在,
- * 而那正是 Vera 反复编错的地方(「赵六 设为已成交」)。
+ * 而那正是 Tess 反复编错的地方(「赵六 设为已成交」)。
  *
  * 提交按钮只在**这一层新出现的控件**里找:crm 的入口叫「新增客户」,
  * 表单里的提交叫「保存客户」,按名字长度挑会挑回入口本身,记录根本没创建,
@@ -396,7 +395,7 @@ async function createRecord(
   const created = readNames(doc);
   // 记录真的出现了才算数,基准必须是**表单这一层**:拿首屏比的话,
   // 弹窗自己的「关闭/取消/保存客户」都算新增,于是提交明明失败、弹窗还开着,
-  // 却报出一个看起来像模像样的第 3 层,把 Vera 引向一批不存在的控件。
+  // 却报出一个看起来像模像样的第 3 层,把 Tess 引向一批不存在的控件。
   const seen = new Set([...first.clickables, ...form.clickables]);
   if (created.clickables.every((n) => seen.has(n))) return undefined;
   return { via: `${form.via} → 填写后点「${submitVia}」`, ...created };
@@ -455,7 +454,7 @@ function setNative(win: DOMWindow, el: HTMLElement, value: string) {
  *
  * 判据保持保守:标题之后的正文短到只可能是一句占位文案,且不含任何
  * 列表项/卡片/控件。宁可漏报 —— 这条是交给人判断的证据,不是硬伤,
- * 误报会让 Emma 把注意力浪费在本来就该空的空态上。
+ * 误报会让 Ida 把注意力浪费在本来就该空的空态上。
  */
 function findEmptySections(doc: Document): string[] {
   const out: string[] = [];

@@ -109,7 +109,7 @@ async function main() {
       runId,
       seq: 1,
       ts: now + 10,
-      event: { type: "node.started", node: "pm", role: "Emma · 产品经理", model: "deepseek-v4-flash" },
+      event: { type: "node.started", node: "pm", role: "Ida · 产品经理", model: "deepseek-v4-flash" },
     },
     {
       runId,
@@ -136,6 +136,35 @@ async function main() {
 
   assert.deepEqual(await store.readEvents("不存在的-run"), []);
   ok("readEvents 未命中返回空数组");
+
+  /* --- 正在执行时追加的需求队列 --- */
+  const queued1 = await store.enqueueChange(runId, "把主色调改成深蓝");
+  const queued2 = await store.enqueueChange(runId, "再增加搜索功能");
+  assert.deepEqual(
+    (await store.listQueuedChanges(runId)).map((item) => item.text),
+    ["把主色调改成深蓝", "再增加搜索功能"],
+  );
+  assert.equal(queued1.status, "pending");
+  ok("需求变更按进入队列的顺序持久化");
+
+  const claimed = await store.claimQueuedChange(runId, queued1.id);
+  assert.equal(claimed?.status, "processing");
+  assert.equal(await store.claimQueuedChange(runId, queued1.id), null);
+  assert.equal((await store.listQueuedChanges(runId))[0].status, "processing");
+  ok("队列项只能被一个执行者原子认领");
+
+  assert.equal(await store.removePendingQueuedChange(runId, queued1.id), false);
+  assert.equal(await store.removePendingQueuedChange(runId, queued2.id), true);
+  assert.deepEqual(
+    (await store.listQueuedChanges(runId)).map((item) => item.id),
+    [queued1.id],
+  );
+  ok("用户只能原子删除尚未开工的队列项");
+
+  await store.removeQueuedChange(runId, queued1.id);
+  assert.deepEqual(await store.listQueuedChanges(runId), []);
+  assert.deepEqual(await store.listQueuedChanges("不存在的-run"), []);
+  ok("处理完成后只移除对应队列项且按 run 隔离");
 
   /* --- compiled app bundles（候选与公开版本） --- */
   assert.equal(await store.getAppBundle(runId, "published"), null);

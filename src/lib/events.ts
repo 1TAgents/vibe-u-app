@@ -1,5 +1,5 @@
 /**
- * 事件模型 —— Glassbox 的地基。
+ * 事件模型 —— VibeU 的地基。
  *
  * 设计原则:整场生成过程中发生的每一件事都必须是一条可序列化事件,
  * 且事件流是唯一真相源。UI 只是事件流的投影,回放只是重放同一串事件。
@@ -26,7 +26,7 @@ export type NodeId =
   | "iterate"
   /** 写验收测试的测试工程师 */
   | "qa"
-  /** 验收失败后接住 Vera 报告、归因并分配责任的产品负责人 */
+  /** 验收失败后接住 Tess 报告、归因并分配责任的产品负责人 */
   | "triage"
   /** 验收反复失败后被拉进来复审设计的架构师 */
   | "review"
@@ -49,21 +49,21 @@ export interface ChangeAssessment {
 }
 
 /**
- * QA 失败根因的归因类别 —— Emma 决定谁该为这轮失败负责。
- * 这是产品规则:Vera 只报告与复测,不承担需求路由权;路由权在 Emma。
+ * QA 失败根因的归因类别 —— Ida 决定谁该为这轮失败负责。
+ * 这是产品规则:Tess 只报告与复测,不承担需求路由权;路由权在 Ida。
  */
 export type QaCause = "visual" | "implementation" | "architecture" | "requirements";
 
-/** Emma 对一轮 QA 失败报告的归因与分配结论。 */
+/** Ida 对一轮 QA 失败报告的归因与分配结论。 */
 export interface QaTriage {
   cause: QaCause;
-  /** 需要 Emma 修订 PRD(验收口径含糊、需求冲突或不可实现) */
+  /** 需要 Ida 修订 PRD(验收口径含糊、需求冲突或不可实现) */
   prdImpact: boolean;
-  /** 需要 Maya 修订视觉方案(视觉/信息层级/交互理解) */
+  /** 需要 Luna 修订视觉方案(视觉/信息层级/交互理解) */
   visualImpact: boolean;
-  /** 需要 Bob 修订设计(数据模型/状态流转/跨模块边界) */
+  /** 需要 Archie 修订设计(数据模型/状态流转/跨模块边界) */
   designImpact: boolean;
-  /** Emma 归因的一句话说明 */
+  /** Ida 归因的一句话说明 */
   reason: string;
   /** 该归因覆盖的失败用例 */
   cases: string[];
@@ -145,10 +145,17 @@ export type RunEvent =
   | { type: "run.started"; prompt: string; model: string; label?: string }
   /** 用户在对话框里提的修改要求 —— 第二轮之后的每一次迭代都从这里开始 */
   | { type: "chat.user"; text: string; turn: number }
-  /** Emma 接单后的路由结论 —— 角色分工必须作为事件被审计和回放 */
+  /** Ida 接单后的路由结论 —— 角色分工必须作为事件被审计和回放 */
   | { type: "chat.routed"; turn: number; assessment: ChangeAssessment }
   /** 一轮迭代收尾,附上工程师对本次改动的说明 */
-  | { type: "chat.done"; turn: number; summary: string; changed: string[] }
+  | {
+      type: "chat.done";
+      turn: number;
+      summary: string;
+      changed: string[];
+      /** 历史事件没有该字段，投影层会从旧 summary 兼容推断。 */
+      outcome?: "succeeded" | "stopped";
+    }
   | { type: "node.started"; node: NodeId; role: string; model: string }
   /** 推理模型的思考链增量 —— 这是把 agent 从黑盒变成玻璃盒的关键 */
   | { type: "node.reasoning.delta"; node: NodeId; text: string }
@@ -235,13 +242,13 @@ export type RunEvent =
       }[];
     }
   /**
-   * Vera 报告失败后,Emma 的归因与分配 —— 组织闭环的审计点。
-   * Vera 只报告,Emma 判断根因并决定由谁处理,再由对应角色修订、Alex 实现、Vera 回归。
+   * Tess 报告失败后,Ida 的归因与分配 —— 组织闭环的审计点。
+   * Tess 只报告,Ida 判断根因并决定由谁处理,再由对应角色修订、Cody 实现、Tess 回归。
    */
   | { type: "qa.triage"; attempt: number; triage: QaTriage }
   /**
-   * Vera 产出的验收用例没覆盖 PRD P0 功能或场景难点 —— 覆盖门在 runTests **之前**拦截。
-   * 这不是产品执行失败,是测试计划没测到重点:把缺失的难点语义回喂 Vera,
+   * Tess 产出的验收用例没覆盖 PRD P0 功能或场景难点 —— 覆盖门在 runTests **之前**拦截。
+   * 这不是产品执行失败,是测试计划没测到重点:把缺失的难点语义回喂 Tess,
    * 让她在同一 attempt 内重写测试计划,有限次数内覆盖合格才真正执行。
    */
   | {
@@ -249,11 +256,11 @@ export type RunEvent =
       attempt: number;
       /** 本 attempt 内第几次覆盖修订(1..MAX_COVERAGE_RETRIES) */
       round: number;
-      /** 缺覆盖的难点语义(正则原文 / 结构要求文案) —— 正是要回喂给 Vera 的证据 */
+      /** 缺覆盖的难点语义(正则原文 / 结构要求文案) —— 正是要回喂给 Tess 的证据 */
       missing: string[];
     }
   /**
-   * 写测试计划前的界面探查 —— 把应用真的渲染一次,采下 Vera 实际能定位到的控件名。
+   * 写测试计划前的界面探查 —— 把应用真的渲染一次,采下 Tess 实际能定位到的控件名。
    *
    * 为什么要单独发一条事件:她只看源码时会**猜**控件叫什么,而源码里有某个
    * 字符串不代表界面上定位得到(它可能在还没打开的弹窗里)。探查成功与否
@@ -334,10 +341,10 @@ export type RunEvent =
     }
   /**
    * 同一失败签名在修复后原样复现 —— 修复未生效或疑似测试基础设施异常。
-   * 审计后终止自动派单,交给平台维护审查,不再让 Emma 反复改派给 Alex/Bob 烧 token。
+   * 审计后终止自动派单,交给平台维护审查,不再让 Ida 反复改派给 Cody/Archie 烧 token。
    *
    * 触发阈值是累计**第三次**相同签名复现:第一次是普通修复,第二次记录「修复未生效」
-   * 并由 Emma 保持原责任人再修一次,第三次仍原样复现才升级平台。
+   * 并由 Ida 保持原责任人再修一次,第三次仍原样复现才升级平台。
    */
   | {
       type: "qa.infrastructure_suspected";
@@ -349,7 +356,7 @@ export type RunEvent =
     }
   /**
    * 同一失败签名第二次原样复现 —— 修复未生效。
-   * 不立即判基础设施:Emma 保持原责任人再修一次,第三次仍复现才升级平台。
+   * 不立即判基础设施:Ida 保持原责任人再修一次,第三次仍复现才升级平台。
    */
   | {
       type: "qa.fix_ineffective";
@@ -360,7 +367,7 @@ export type RunEvent =
       signature: string;
     }
   /**
-   * 静态质量审计(计时器生命周期)发现源码级问题 —— 构建后、Vera 验收前,直接派 Alex 修复。
+   * 静态质量审计(计时器生命周期)发现源码级问题 —— 构建后、Tess 验收前,直接派 Cody 修复。
    */
   | {
       type: "audit.failed";
@@ -373,7 +380,7 @@ export type RunEvent =
       files: string[];
     }
   /**
-   * 静态审计在修复次数上限内仍未通过 —— 记录后继续交 Vera 走运行验证,
+   * 静态审计在修复次数上限内仍未通过 —— 记录后继续交 Tess 走运行验证,
    * runner 的 timerSafety 硬门是第二道防线,不会因此放过不安全产物。
    */
   | {
@@ -382,7 +389,7 @@ export type RunEvent =
       reasons: string[];
     }
   /**
-   * 产品负责人交付验收 —— Vera 验「功能是否按 PRD 工作」,Emma 验「能不能交出去」。
+   * 产品负责人交付验收 —— Tess 验「功能是否按 PRD 工作」,Ida 验「能不能交出去」。
    * 后者包含判断:使用习惯、视觉是否匹配目标人群。两件事不能合并,
    * 用例全绿但界面难用的产品在真实公司里同样不能交付。
    */
@@ -397,7 +404,7 @@ export type RunEvent =
         usability: { ok: boolean; note: string };
         visual: { ok: boolean; note: string };
       };
-      /** 打回时的具体问题与期望 —— 直接作为 Maya/Alex 的返工依据 */
+      /** 打回时的具体问题与期望 —— 直接作为 Luna/Cody 的返工依据 */
       issues: { dimension: "usability" | "visual"; problem: string; expectation: string }[];
       /** 采证阶段确定的客观缺陷(无标签控件等),不经模型判断 */
       hardIssues: string[];

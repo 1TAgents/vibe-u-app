@@ -4,7 +4,7 @@ import { CORS_HEADERS } from "@/lib/sse";
 export const runtime = "nodejs";
 
 /**
- * 生成物的数据服务(对标 Atoms Cloud Backend)。
+ * 生成应用的数据服务。
  *
  * 真正的读写逻辑在 lib/appdata.ts —— 那里同时被服务端的验收测试执行器调用,
  * 保证「测试里跑的」和「线上跑的」是同一份实现。

@@ -162,7 +162,7 @@ export async function streamChat(
     signal?: AbortSignal;
     /**
      * 推理模式控制(DeepSeek V4 等 thinking 默认 enabled 的模型)。
-     * 代码直出角色(Alex 的 engineer/fix/iterate)显式 `disabled`,长输出不用先烧完思考预算;
+     * 代码直出角色(Cody 的 engineer/fix/iterate)显式 `disabled`,长输出不用先烧完思考预算;
      * 其余角色保持默认 `enabled`。不传则请求体不带该字段,行为与网关默认一致。
      */
     thinking?: "enabled" | "disabled";

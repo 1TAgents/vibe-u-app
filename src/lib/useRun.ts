@@ -10,8 +10,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Prd } from "./roles";
-import type { Envelope, RunEvent, VerifyIssue } from "./events";
+import type { Envelope, RunEvent, RunStatus, VerifyIssue } from "./events";
 import { applyEvent, emptyState, resetState, type RunState } from "./fold";
+import type { QueuedChange } from "./store";
 
 export const MAX_FIX_ATTEMPTS = 3;
 
@@ -36,7 +37,10 @@ export function useRun() {
   const [version, setVersion] = useState(0);
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [queuedChanges, setQueuedChanges] = useState<QueuedChange[]>([]);
   const abortRef = useRef<AbortController | null>(null);
+  const processingQueueRef = useRef(false);
+  const queuePausedRef = useRef(false);
   const dirtyRef = useRef(false);
 
   /**
@@ -124,24 +128,37 @@ export function useRun() {
         });
         await consume(res);
       } catch (e) {
-        if ((e as Error).name === "AbortError") return;
+        if ((e as Error).name === "AbortError") return false;
         setError(e instanceof Error ? e.message : String(e));
         setPhase("failed");
-        return;
+        return false;
       }
       if (state.aborted) {
         setPhase("failed");
         setError(state.aborted);
-        return;
+        return false;
       }
       onOk();
+      return true;
     },
     [consume, state],
   );
 
+  const refreshQueue = useCallback(async (id = runIdRef.current) => {
+    if (!id) return [];
+    const res = await fetch(`/api/run/${id}/queue`);
+    if (!res.ok) return [];
+    const data = (await res.json()) as { queue?: QueuedChange[] };
+    const queue = data.queue ?? [];
+    setQueuedChanges(queue);
+    return queue;
+  }, []);
+
   const start = useCallback(
     async (prompt: string, model?: string, opts?: { autoApprove?: boolean }) => {
       resetState(state);
+      setQueuedChanges([]);
+      queuePausedRef.current = false;
       runIdRef.current = null;
       setRunId(null);
       setError(null);
@@ -208,18 +225,114 @@ export function useRun() {
     [runStream, flushNow, state],
   );
 
-  /** 生成完之后,按对话要求改一版 */
-  const sendMessage = useCallback(
-    async (text: string) => {
+  /** 真正启动一轮需求变更；排队项只有走到这里才进入正式事件流。 */
+  const executeMessage = useCallback(
+    async (text: string, queueId?: string) => {
       const id = runIdRef.current;
-      if (!id || !text.trim()) return;
+      if (!id || !text.trim()) return false;
       setError(null);
       setPhase("generating");
       // 改完照样要过运行时校验 ——「用户让我改的」不构成跳过验证的理由
-      await runStream(`/api/run/${id}/chat`, { text }, syncPhase);
+      const ok = await runStream(`/api/run/${id}/chat`, { text, queueId }, syncPhase);
+      await refreshQueue(id);
+      return ok;
     },
-    [runStream, syncPhase],
+    [refreshQueue, runStream, syncPhase],
   );
+
+  /**
+   * 老板始终可以说话：空闲时立即开新一轮，执行中或已有排队项时按 FIFO 持久化。
+   * 当前轮不会被半途改写，下一轮也不会因为刷新页面而消失。
+   */
+  const sendMessage = useCallback(
+    async (text: string) => {
+      const id = runIdRef.current;
+      const value = text.trim();
+      if (!id || !value) return;
+      const mustQueue =
+        phase === "generating" ||
+        phase === "fixing" ||
+        phase === "verifying" ||
+        processingQueueRef.current ||
+        queuedChanges.length > 0;
+
+      if (!mustQueue) {
+        queuePausedRef.current = false;
+        await executeMessage(value);
+        return;
+      }
+
+      const res = await fetch(`/api/run/${id}/queue`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: value }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        item?: QueuedChange;
+        error?: string;
+      };
+      if (!res.ok || !data.item) {
+        setError(data.error || `需求排队失败 (${res.status})`);
+        return;
+      }
+      setError(null);
+      setQueuedChanges((current) => [...current, data.item!]);
+    },
+    [executeMessage, phase, queuedChanges.length],
+  );
+
+  /** 撤回尚未进入正式工作流的排队要求。服务端会再次校验状态，避免多端竞态误删。 */
+  const deleteQueuedChange = useCallback(
+    async (queueId: string) => {
+      const id = runIdRef.current;
+      if (!id) return false;
+
+      const item = queuedChanges.find((change) => change.id === queueId);
+      if (!item || item.status !== "pending") return false;
+
+      const res = await fetch(
+        `/api/run/${id}/queue?id=${encodeURIComponent(queueId)}`,
+        { method: "DELETE" },
+      );
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setError(data.error || `删除排队任务失败 (${res.status})`);
+        await refreshQueue(id);
+        return false;
+      }
+
+      setError(null);
+      setQueuedChanges((current) =>
+        current.filter((change) => change.id !== queueId),
+      );
+      return true;
+    },
+    [queuedChanges, refreshQueue],
+  );
+
+  /** 当前任务周期到达安全终态后，自动按顺序接下一条要求。 */
+  useEffect(() => {
+    if (
+      queuePausedRef.current ||
+      processingQueueRef.current ||
+      queuedChanges.length === 0 ||
+      state.files.length === 0 ||
+      (phase !== "succeeded" && phase !== "failed")
+    ) {
+      return;
+    }
+
+    const next = queuedChanges[0];
+    processingQueueRef.current = true;
+    setQueuedChanges((current) => current.filter((item) => item.id !== next.id));
+    void executeMessage(next.text, next.id)
+      .then((ok) => {
+        if (!ok) queuePausedRef.current = true;
+      })
+      .finally(() => {
+        processingQueueRef.current = false;
+      });
+  }, [executeMessage, phase, queuedChanges, state.files.length]);
 
   const abort = useCallback(() => {
     abortRef.current?.abort();
@@ -235,15 +348,27 @@ export function useRun() {
         setError("找不到这次运行");
         return;
       }
-      const data = (await res.json()) as { events: Envelope<RunEvent>[] };
+      const data = (await res.json()) as {
+        run: { status: RunStatus };
+        events: Envelope<RunEvent>[];
+      };
       resetState(state);
       for (const env of data.events) applyEvent(state, env);
       runIdRef.current = id;
       setRunId(id);
+      await refreshQueue(id);
       flushNow();
-      syncPhase();
+
+      // 数据库里的 run.status 是本次运行的最终运营状态。异常断流等情况下，
+      // 事件流可能来不及追加 run.finished；若只靠 fold 推导，历史失败项目会被
+      // 错画成“生成中”，群聊输入也会永久禁用。载入历史时以落库状态兜底，
+      // 同时仍保留事件流里的全部失败现场与已有产物，允许用户继续提出修改。
+      if (data.run.status === "succeeded") setPhase("succeeded");
+      else if (data.run.status === "failed" || data.run.status === "aborted") setPhase("failed");
+      else if (data.run.status === "awaiting_approval") setPhase("awaiting_approval");
+      else syncPhase();
     },
-    [flushNow, syncPhase, state],
+    [flushNow, refreshQueue, syncPhase, state],
   );
 
   return {
@@ -252,11 +377,13 @@ export function useRun() {
     phase,
     version,
     error,
+    queuedChanges,
     start,
     approve,
     reject,
     reportVerify,
     sendMessage,
+    deleteQueuedChange,
     abort,
     load,
   };

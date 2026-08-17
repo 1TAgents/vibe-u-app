@@ -18,12 +18,13 @@
 import { cn } from "@/lib/cn";
 import type { RunState } from "@/lib/fold";
 import type { TestStep } from "@/lib/testrunner";
+import { DeliverySummary } from "@/components/DeliverySummary";
 
 export function TestReport({ state }: { state: RunState }) {
   const cases = state.testCases ?? [];
   const rounds = state.qaHistory;
 
-  if (cases.length === 0 && rounds.length === 0 && state.accepts.length === 0) {
+  if (!state.prd && cases.length === 0 && rounds.length === 0 && state.accepts.length === 0) {
     return (
       <div className="flex h-full items-center justify-center">
         <p className="text-sm text-ink-500">Tess 还没开始设计质量验收</p>
@@ -38,51 +39,10 @@ export function TestReport({ state }: { state: RunState }) {
 
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-4">
+      <DeliverySummary state={state} />
+
       {/* 交付验收 —— 功能之外,产品负责人对「能不能交出去」拍板 */}
       {accept && <AcceptCard accept={accept} rounds={state.accepts.length} />}
-
-      {/* 结论 */}
-      {last && (
-        <section
-          className={cn(
-            "rounded-xl border px-4 py-3",
-            last.failed === 0
-              ? "border-emerald-500/30 bg-emerald-500/5"
-              : "border-rose-500/30 bg-rose-500/5",
-          )}
-        >
-          <div className="flex items-center gap-2.5">
-            <span
-              className={cn(
-                "size-2 rounded-full",
-                last.failed === 0 ? "bg-emerald-400" : "bg-rose-400",
-              )}
-            />
-            <h2 className="text-sm font-medium text-ink-200">验收结论</h2>
-            <span
-              className={cn(
-                "text-[13px]",
-                last.failed === 0 ? "text-emerald-300" : "text-rose-300",
-              )}
-            >
-              {last.passed}/{last.passed + last.failed} 通过
-            </span>
-            {last.failed === 0 && rounds.length > 1 && (
-              <span className="rounded bg-ink-800 px-1.5 py-px text-[11px] text-ink-400">
-                第 {rounds.length} 轮才通过
-              </span>
-            )}
-            <span className="ml-auto font-mono text-[11px] text-ink-500">
-              {(last.durationMs / 1000).toFixed(1)}s
-            </span>
-          </div>
-          <p className="mt-1.5 text-[11px] leading-relaxed text-ink-400">
-            {last.failed === 0
-              ? "在真实运行的应用上走了一遍完整操作 —— 填内容、点提交、断言结果出现。构建通过只说明不会崩,这一步说明功能真的能用。"
-              : "有用例没通过。构建和渲染都没问题,但功能没做到 PRD 承诺的样子。"}
-          </p>
-        </section>
-      )}
 
       {/* 用例 */}
       {cases.length > 0 && (
@@ -206,7 +166,7 @@ export function TestReport({ state }: { state: RunState }) {
 /**
  * 产品负责人交付验收。
  *
- * 和上面 Vera 的功能验收是两件事:Vera 回答「功能是否按 PRD 工作」,
+ * 和上面 Tess 的功能验收是两件事:Tess 回答「功能是否按 PRD 工作」,
  * 这里回答「能不能交出去」—— 包含使用习惯与视觉是否匹配目标人群的判断。
  * 用例全绿但界面难用的产品,在真实公司里同样不能交付。
  */

@@ -10,6 +10,7 @@ import assert from "node:assert/strict";
 import { completionIssues, mergeGeneratedFiles } from "../src/lib/orchestrator";
 import { foldEvents } from "../src/lib/fold";
 import { toFeed } from "../src/lib/chatfeed";
+import { changedFilePaths } from "../src/lib/file-diff";
 import type { Envelope, RunEvent } from "../src/lib/events";
 
 const built = {
@@ -49,6 +50,25 @@ const built = {
     [],
   );
   console.log("Orchestrator · ✓ done 只有在完整交付事实齐备时才允许通过");
+}
+
+{
+  assert.deepEqual(
+    changedFilePaths(
+      [
+        { path: "/App.js", content: "old" },
+        { path: "/keep.js", content: "same" },
+        { path: "/removed.js", content: "gone" },
+      ],
+      [
+        { path: "/App.js", content: "new" },
+        { path: "/keep.js", content: "same" },
+        { path: "/added.js", content: "new file" },
+      ],
+    ),
+    ["/App.js", "/added.js", "/removed.js"],
+  );
+  console.log("Orchestrator · ✓ 本轮文件清单只报告真实新增、修改与删除");
 }
 
 {
@@ -193,4 +213,28 @@ const built = {
   assert.match(text, /第 1 轮.*PRD 尚未创建/);
   assert.match(text, /验收通过,可以交付.*功能、体验与视觉均达到交付标准/);
   console.log("Orchestrator · ✓ 派单与验收只显示合并后的具体结果，不重复播报占位消息");
+}
+
+{
+  const event = (seq: number, value: RunEvent): Envelope<RunEvent> => ({
+    runId: "stopped-change",
+    seq,
+    ts: 3000 + seq,
+    event: value,
+  });
+  const state = foldEvents([
+    event(0, { type: "run.started", prompt: "测试失败收尾", model: "m" }),
+    event(1, { type: "chat.user", turn: 1, text: "调整编辑功能" }),
+    event(2, {
+      type: "chat.done",
+      turn: 1,
+      summary: "本轮未完成；具体原因和下一步见上方 Piper 交接记录",
+      changed: ["/App.js", "/components/Form.js"],
+      outcome: "stopped",
+    }),
+  ]);
+  const done = toFeed(state).find((item) => item.id === "u1-done");
+  assert.equal(done?.tone, "warn");
+  assert.equal(done?.tags, undefined, "失败收尾不应把文件树画成已完成改动");
+  console.log("Orchestrator · ✓ 未完成的需求变更使用警示样式且不冒充成功文件清单");
 }

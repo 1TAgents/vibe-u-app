@@ -1,8 +1,8 @@
 /**
  * 平台注入进生成物的运行时契约。
  *
- * 这两个文件构成「Glassbox 平台」与「被生成的应用」之间的契约,由平台提供而非 LLM 生成:
- *   /db.js     → 真实的服务端持久化 SDK(对标 Atoms Cloud Backend)
+ * 这两个文件构成「VibeU 平台」与「被生成的应用」之间的契约,由平台提供而非 LLM 生成:
+ *   /db.js     → 真实的服务端持久化 SDK
  *   /index.js  → 挂载入口 + 错误捕获 + 健康探针
  *
  * 关键设计:校验不是「构建通过就算过」。构建通过 ≠ 页面能用 —— 语法正确但
@@ -10,15 +10,15 @@
  * 而它们都能骗过编译器。所以 /index.js 里装了错误捕获和空白探针,
  * 把**运行时真相**主动回传给平台,再由平台回喂给工程师修复。
  *
- * 宿主页面(见 builder.ts 的 appHtml)会在加载 bundle 之前写入 window.__GLASSBOX__,
+ * 宿主页面(见 builder.ts 的 appHtml)会在加载 bundle 之前写入 window.__VIBEU__,
  * 所以这里直接读全局配置,不需要构建期做字符串替换。
  */
 
 export const DB_MODULE = `/**
- * Glassbox 数据服务 —— 由平台注入,数据真实存储在服务端。
+ * VibeU 数据服务 —— 由平台注入,数据真实存储在服务端。
  * 刷新页面、换浏览器打开分享链接,数据都还在。
  */
-const cfg = (typeof window !== "undefined" && window.__GLASSBOX__) || {};
+const cfg = (typeof window !== "undefined" && window.__VIBEU__) || {};
 const API = cfg.api || "";
 const RUN_ID = cfg.runId || "";
 
@@ -59,12 +59,12 @@ export const INDEX_JS = `import React from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
 
-/* ---------- 运行时探针:把真实运行状况回传给 Glassbox 平台 ---------- */
+/* ---------- 运行时探针:把真实运行状况回传给 VibeU 平台 ---------- */
 
 function report(payload) {
   try {
     // 嵌在工作区里时 parent 是平台页面;独立打开时 parent 就是自己,发了也无害
-    window.parent.postMessage({ __glassbox: true, ...payload }, "*");
+    window.parent.postMessage({ __vibeu: true, ...payload }, "*");
   } catch (_) {}
 }
 

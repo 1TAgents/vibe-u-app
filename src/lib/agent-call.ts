@@ -33,8 +33,8 @@ interface AgentCallOptions {
   jsonMode?: boolean;
   /**
    * 推理模式控制(DeepSeek V4 thinking 默认 enabled)。
-   * 代码直出角色(Alex 的 engineer/fix/iterate)显式 "disabled" —— 长代码输出
-   * 不该先把思考预算烧光;Emma/Maya/Bob/Vera/triage 不传,保持默认 enabled。
+   * 代码直出角色(Cody 的 engineer/fix/iterate)显式 "disabled" —— 长代码输出
+   * 不该先把思考预算烧光;Ida/Luna/Archie/Tess/triage 不传,保持默认 enabled。
    */
   thinking?: "enabled" | "disabled";
 }

@@ -359,7 +359,7 @@ assert.equal(crmValue.covered, true, "expectValue 字段值断言应通过");
 assert.deepEqual(crmValue.missing, []);
 console.log("Stress coverage · ✓ crm 含 expectValue 字段值断言通过");
 
-// 回归:这是跑批里 Vera 真实写出来、却被这道门连拒两轮、导致整场生成作废的计划。
+// 回归:这是跑批里 Tess 真实写出来、却被这道门连拒两轮、导致整场生成作废的计划。
 // 它是教科书式的持久化验证 —— 填内容、保存、看见、离开列表、点回该客户、内容仍在。
 // 唯一"问题"是用了全页面 expectText 而不是区域断言。拿断言的**形式**当证据,
 // 三次用错的理由杀掉对的测试,每次的代价都是一整场生成。
@@ -388,7 +388,7 @@ assert.equal(crmRealWorld.covered, true, "全页面 expectText 断言填入内�
 console.log("Stress coverage · ✓ crm 真实被误拒的计划(全页面 expectText)现在通过");
 
 // 走完「保存 → 离开 → 重新进入」是更强的证据,当然也应通过。
-// 它是提示词里引导 Vera 优先采用的写法,但不做成硬门 —— 卡到她写不出来,
+// 它是提示词里引导 Tess 优先采用的写法,但不做成硬门 —— 卡到她写不出来,
 // 代价是整场生成作废,而产品可能一个缺陷都没有。
 const crmReenter = stressCovered("crm", [
   {
@@ -411,7 +411,7 @@ assert.equal(crmReenter.covered, true, "离开再回来仍能看到填入内容,
 console.log("Stress coverage · ✓ crm 详情文本路径:离开再回来断言通过");
 
 
-// 回归:这是跑批里 Vera 真实交出、却被这道门连拒两轮、导致整场作废的计划。
+// 回归:这是跑批里 Tess 真实交出、却被这道门连拒两轮、导致整场作废的计划。
 // 结构上一条不缺 —— 源列断言、click 迁移、目标列断言、对源列的离开证据 ——
 // 只是走的是「待办→进行中」而不是门里写死的「进行中→已完成」,列名也照界面叫「待办列」。
 // 门该检查流转的形状,不是特定两列的名字。

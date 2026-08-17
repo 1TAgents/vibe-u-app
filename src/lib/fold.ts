@@ -86,7 +86,7 @@ export interface QaRecord {
   }[];
 }
 
-/** Emma 对一轮 QA 失败报告的归因与分配记录。 */
+/** Ida 对一轮 QA 失败报告的归因与分配记录。 */
 export interface QaTriageRecord {
   seq: number;
   at: number;
@@ -131,7 +131,7 @@ export interface FixIneffectiveRecord {
   signature: string;
 }
 
-/** 静态质量审计(计时器生命周期)发现源码级问题 —— Alex 修复的确定性证据。 */
+/** 静态质量审计(计时器生命周期)发现源码级问题 —— Cody 修复的确定性证据。 */
 export interface AuditRecord {
   seq: number;
   at: number;
@@ -141,7 +141,7 @@ export interface AuditRecord {
   files: string[];
 }
 
-/** 静态审计在修复次数上限内仍未通过 —— 已继续交 Vera 运行验证,runner 硬门兜底。 */
+/** 静态审计在修复次数上限内仍未通过 —— 已继续交 Tess 运行验证,runner 硬门兜底。 */
 export interface AuditExhaustedRecord {
   seq: number;
   at: number;
@@ -150,7 +150,7 @@ export interface AuditExhaustedRecord {
 }
 
 /**
- * QA 测试计划覆盖修订 —— Vera 产出的用例在 runTests 前没覆盖场景难点,
+ * QA 测试计划覆盖修订 —— Tess 产出的用例在 runTests 前没覆盖场景难点,
  * 缺覆盖的语义已回喂她重写。每次重写都是一条可审计证据。
  */
 export interface QaCoverageRetryRecord {
@@ -226,7 +226,7 @@ export interface ChatTurn {
   /** 用户说了什么 */
   text: string;
   at: number;
-  /** Emma 对这条需求的分类与角色路由结论 */
+  /** Ida 对这条需求的分类与角色路由结论 */
   assessment?: ChangeAssessment;
   routeSeq?: number;
   /** 工程师改完之后的说明与改动文件;未完成时为空 */
@@ -234,6 +234,7 @@ export interface ChatTurn {
   /** 说明这条消息自己的事件序号 —— 它产生在整轮迭代结束时,不能借用提问的序号 */
   doneSeq?: number;
   changed?: string[];
+  outcome?: "succeeded" | "stopped";
 }
 
 export interface FileDiff {
@@ -250,7 +251,7 @@ export interface RunState {
   timeline: NodeState[];
   prd?: Prd;
   design?: Design;
-  /** Maya 输出的视觉语言与页面构图，Alex 必须消费这份方案。 */
+  /** Luna 输出的视觉语言与页面构图，Cody 必须消费这份方案。 */
   visual?: VisualDesign;
   /** 测试工程师写的验收用例 —— 与 PRD、设计并列的一等产物 */
   testCases?: TestCase[];
@@ -260,7 +261,7 @@ export interface RunState {
   buildHistory: BuildRecord[];
   /** 功能级验收测试的历次结果 */
   qaHistory: QaRecord[];
-  /** Emma 对 QA 失败的历次归因与分配 —— 组织闭环的可审计证据 */
+  /** Ida 对 QA 失败的历次归因与分配 —— 组织闭环的可审计证据 */
   qaTriages: QaTriageRecord[];
   /** 责任升级记录 —— 谁被拉进来了、为什么 */
   escalations: Escalation[];
@@ -272,9 +273,9 @@ export interface RunState {
   audits: AuditRecord[];
   /** 静态审计修复次数上限内仍未通过 */
   auditExhausted: AuditExhaustedRecord[];
-  /** QA 测试计划覆盖修订记录 —— runTests 前缺覆盖语义回喂 Vera 重写 */
+  /** QA 测试计划覆盖修订记录 —— runTests 前缺覆盖语义回喂 Tess 重写 */
   qaCoverageRetries: QaCoverageRetryRecord[];
-  /** Emma 的历次交付验收 —— 功能通过之后「能不能交出去」的判断 */
+  /** Ida 的历次交付验收 —— 功能通过之后「能不能交出去」的判断 */
   accepts: AcceptRecord[];
   /** Piper 每一次派单及理由。 */
   dispatches: DispatchRecord[];
@@ -542,6 +543,7 @@ export function applyEvent(s: RunState, env: Envelope<RunEvent>): RunState {
       if (t) {
         t.summary = e.summary;
         t.changed = e.changed;
+        t.outcome = e.outcome;
         t.doneSeq = env.seq;
       }
       break;

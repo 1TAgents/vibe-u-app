@@ -27,13 +27,14 @@ function ok(label: string) {
 
 /* --- 总轮次 --- */
 {
+  assert.equal(DEFAULT_LIMITS.maxDispatches, 50, "多角色协作的总派单预算应为 50 轮");
   let b = emptyBudget();
   for (let i = 0; i < DEFAULT_LIMITS.maxDispatches; i++) {
     // 轮流换人,避免撞上连派上限
     b = spend(b, i % 2 === 0 ? "engineer" : "architect");
   }
   const r = checkDispatch(b, "engineer");
-  assert.equal(r.allowed, false, "用满 20 轮必须拦");
+  assert.equal(r.allowed, false, `用满 ${DEFAULT_LIMITS.maxDispatches} 轮必须拦`);
   assert.equal(r.allowed === false && r.kind, "dispatches");
   assert.match(
     r.allowed === false ? r.reason : "",
@@ -109,7 +110,11 @@ function ok(label: string) {
   b = spend(b, "engineer");
   b = record(b, { totalTokens: 61067, costUsd: 0.0092 });
   const text = describe(b);
-  assert.match(text, /还剩 18 轮/, "要说清还剩多少");
+  assert.match(
+    text,
+    new RegExp(`还剩 ${DEFAULT_LIMITS.maxDispatches - 2} 轮`),
+    "要说清还剩多少",
+  );
   assert.match(text, /连续 2 次/, "连派情况要可见 —— 它会影响决策");
   assert.match(text, /61\.1k token/, "用量只展示,不参与判定");
   assert.equal(typeof text, "string", "给出去的是文字,不是可写结构");

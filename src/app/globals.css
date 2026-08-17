@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /*
- * Glassbox 视觉基调:深色控制台。
+ * VibeU 视觉基调:深色控制台。
  * 这是一个观测工具,不是一个营销页 —— 深色底让流动的思考链、状态灯、
  * 代码高亮成为画面上唯一的亮部,注意力自然落在"过程"上。
  */
@@ -76,7 +76,7 @@ body {
   height: 100%;
 }
 
-@keyframes glassbox-pulse {
+@keyframes vibeu-pulse {
   0%,
   100% {
     opacity: 1;
@@ -86,10 +86,10 @@ body {
   }
 }
 .pulse-dot {
-  animation: glassbox-pulse 1.4s ease-in-out infinite;
+  animation: vibeu-pulse 1.4s ease-in-out infinite;
 }
 
-@keyframes glassbox-sweep {
+@keyframes vibeu-sweep {
   from {
     transform: translateX(-100%);
   }
@@ -108,5 +108,5 @@ body {
     rgba(255, 255, 255, 0.09),
     transparent
   );
-  animation: glassbox-sweep 1.6s ease-in-out infinite;
+  animation: vibeu-sweep 1.6s ease-in-out infinite;
 }

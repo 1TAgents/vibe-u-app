@@ -395,7 +395,7 @@ export function architectPrompt(userRequest: string, prd: Prd, visual: VisualDes
 
 技术上下文(必须遵守):
 - 生成物是 React 单页应用,不使用路由库,页面通过内部状态切换。
-- 数据持久化通过平台注入的 \`db\` 模块完成(类似 Atoms Cloud Backend),
+- 数据持久化通过平台注入的 \`db\` 模块完成,
   它提供 collection 级别的 CRUD,数据真实存在服务端。
 - 因此数据模型请按 "collection" 来设计,每个 collection 是一组同构记录。
 - 每条记录平台会自动带 \`id\` 和 \`createdAt\`,你不需要重复定义。`,
@@ -973,8 +973,7 @@ export const TestCaseSchema = z.object({
 /**
  * 测试工程师。
  *
- * 这是我认为最该补、而 Atoms 恰恰没做的角色 —— 他们开源版里的 QaEngineer()
- * 是被注释掉的,而线上被用户诟病最多的正是「说做完了但根本不能用」。
+ * 测试工程师是证据驱动闭环的关键角色:没有独立验收,「已经完成」仍然只是主张。
  *
  * 关键约束:**它不写测试代码,只描述测什么**。
  * 让模型直接写脚本意味着它要凭空猜 DOM 选择器,猜错时失败原因是

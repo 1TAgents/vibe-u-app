@@ -2,13 +2,16 @@
   "name": "vibeuapp",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20.9.0"
+  },
   "scripts": {
     "dev": "next dev -p 3002",
     "build": "next build --webpack",
     "start": "next start -p 3002",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "tsx tests/pg-store.test.ts && tsx tests/builder.test.ts && tsx tests/qa-runner.test.ts && tsx tests/visible-qa.test.ts && tsx tests/within-assertion.test.ts && tsx tests/expect-value.test.ts && tsx tests/expect-attribute.test.ts && tsx tests/expect-number-within.test.ts && tsx tests/advance-time.test.ts && tsx tests/timer-safety.test.ts && tsx tests/targetgate.test.ts && tsx tests/screen-probe.test.ts && tsx tests/scoped-action.test.ts && tsx tests/region-loose.test.ts && tsx tests/stable-label.test.ts && tsx tests/stress-coverage.test.ts && tsx tests/budget.test.ts && tsx tests/gates.test.ts && tsx tests/orchestrator.test.ts && tsx tests/llm.test.ts && tsx tests/sse.test.ts",
+    "test": "tsx tests/pg-store.test.ts && tsx tests/builder.test.ts && tsx tests/qa-runner.test.ts && tsx tests/visible-qa.test.ts && tsx tests/within-assertion.test.ts && tsx tests/expect-value.test.ts && tsx tests/expect-attribute.test.ts && tsx tests/expect-number-within.test.ts && tsx tests/advance-time.test.ts && tsx tests/timer-safety.test.ts && tsx tests/targetgate.test.ts && tsx tests/screen-probe.test.ts && tsx tests/scoped-action.test.ts && tsx tests/region-loose.test.ts && tsx tests/stable-label.test.ts && tsx tests/stress-coverage.test.ts && tsx tests/budget.test.ts && tsx tests/gates.test.ts && tsx tests/orchestrator.test.ts && tsx tests/parse-retry.test.ts && tsx tests/delivery-summary.test.ts && tsx tests/llm.test.ts && tsx tests/sse.test.ts",
     "check": "tsc --noEmit && eslint src --max-warnings=0 && npm run test"
   },
   "dependencies": {

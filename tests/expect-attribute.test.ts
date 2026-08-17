@@ -27,6 +27,7 @@ import { useState } from "react";
 function App() {
   const [items, setItems] = useState([]);
   const [name, setName] = useState("");
+  const [done, setDone] = useState(false);
   const add = () => {
     if (!name.trim()) return;
     setItems((p) => [...p, { name: name.trim(), qty: 2, threshold: 1 }]);
@@ -55,6 +56,13 @@ function App() {
           );
         })}
       </ul>
+      <button
+        aria-label={done ? "写周报 取消完成" : "写周报 标记完成"}
+        aria-pressed={done ? "true" : "false"}
+        onClick={() => setDone((value) => !value)}
+      >
+        写周报
+      </button>
     </div>
   );
 }
@@ -121,6 +129,37 @@ const cases: TestCase[] = [
     name: "目标商品不存在或没有该属性应报找不到",
     steps: [{ action: "expectAttribute", target: "香蕉", attr: "data-state", value: "low" }],
   },
+  {
+    name: "点击后可访问名称变化仍断言同一控件",
+    steps: [
+      { action: "click", target: "写周报 标记完成" },
+      {
+        action: "expectAttribute",
+        target: "写周报 标记完成",
+        attr: "aria-pressed",
+        value: "true",
+      },
+      { action: "click", target: "写周报 取消完成" },
+      {
+        action: "expectAttribute",
+        target: "写周报 取消完成",
+        attr: "aria-pressed",
+        value: "false",
+      },
+    ],
+  },
+  {
+    name: "不同目标不得复用最近交互控件",
+    steps: [
+      { action: "click", target: "写周报 标记完成" },
+      {
+        action: "expectAttribute",
+        target: "其他任务 标记完成",
+        attr: "aria-pressed",
+        value: "true",
+      },
+    ],
+  },
 ];
 
 async function main() {
@@ -150,7 +189,18 @@ async function main() {
   assert.match(missing.message, /找不到带 data-state 的「香蕉」/);
   console.log("ExpectAttribute · ✓ 目标商品不存在时报「找不到」");
 
-  assert.equal(report.passed, 1, JSON.stringify(report.failures, null, 2));
+  // 5) 点击会改变 accessible name,但紧随其后的断言描述的是同一个控件
+  const renamed = report.failures.find((f) => f.case.includes("可访问名称变化"));
+  assert.ok(!renamed, `名称变化后的同控件状态断言应通过:${JSON.stringify(renamed)}`);
+  console.log("ExpectAttribute · ✓ 点击后名称变化仍可断言同一控件");
+
+  // 6) 复用严格限定为同一 target,不能把无关目标静默绑定到最近控件
+  const unrelated = report.failures.find((f) => f.case.includes("不同目标不得复用"));
+  assert.ok(unrelated, "不同目标不得复用最近交互控件");
+  assert.match(unrelated.message, /找不到带 aria-pressed 的「其他任务 标记完成」/);
+  console.log("ExpectAttribute · ✓ 不同目标不会误用最近交互控件");
+
+  assert.equal(report.passed, 2, JSON.stringify(report.failures, null, 2));
 }
 
 main().catch((err) => {

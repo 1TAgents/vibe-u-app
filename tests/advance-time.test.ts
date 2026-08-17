@@ -3,7 +3,7 @@
  *
  * 验证两点:
  * 1) 不推进时钟,计时器的终态(如 25 分钟专注结束)永远到不了 —— 用例失败,
- *    这正是老 pomodoro run(msrzqqbfopjqzqgs)栽跟头的地方:Vera 点击开始后
+ *    这正是老 pomodoro run(msrzqqbfopjqzqgs)栽跟头的地方:Tess 点击开始后
  *    立即断言 25 分钟后才出现的文案,产品怎么写都过不了。
  * 2) advanceTime 推进 1500 秒后,完成态、计数、短休息链路都能被验证 ——
  *    jsdom 里不再需要真实等待 25 分钟。

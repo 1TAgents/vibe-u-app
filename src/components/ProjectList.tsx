@@ -36,15 +36,19 @@ const STATUS: Record<string, { text: string; dot: string; cls: string }> = {
   aborted: { text: "已中断", dot: "bg-ink-600", cls: "text-ink-400" },
 };
 
-/** 一次跑批会留下几十条记录,不筛一下没法看 —— 默认只看能打开的那些 */
+/**
+ * 筛选只帮助项目多时快速定位，不能改变“首页默认展示所有项目”的语义。
+ * 数据库清理与界面筛选是两件事：库里存在的失败、运行中、待审核项目都必须可见，
+ * 否则用户会失去继续处理它们的入口。
+ */
 const FILTERS = [
-  { id: "usable", text: "能打开", match: (s: string) => s === "succeeded" },
   { id: "all", text: "全部", match: () => true },
-  { id: "failed", text: "没成", match: (s: string) => s === "failed" || s === "aborted" },
+  { id: "usable", text: "已交付", match: (s: string) => s === "succeeded" },
+  { id: "unfinished", text: "未完成", match: (s: string) => s !== "succeeded" },
 ] as const;
 
 export function ProjectList({ runs }: { runs: RunSummary[] }) {
-  const [filter, setFilter] = useState<(typeof FILTERS)[number]["id"]>("usable");
+  const [filter, setFilter] = useState<(typeof FILTERS)[number]["id"]>("all");
   const [q, setQ] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
@@ -59,7 +63,7 @@ export function ProjectList({ runs }: { runs: RunSummary[] }) {
   };
 
   const shown = useMemo(() => {
-    const f = FILTERS.find((x) => x.id === filter) ?? FILTERS[1];
+    const f = FILTERS.find((x) => x.id === filter) ?? FILTERS[0];
     const kw = q.trim().toLowerCase();
     return runs.filter(
       (r) =>
@@ -82,7 +86,7 @@ export function ProjectList({ runs }: { runs: RunSummary[] }) {
           </span>
         </h2>
 
-        {runs.length > 3 && <div className="ml-auto flex items-center gap-1.5">
+        {runs.length > 1 && <div className="ml-auto flex items-center gap-1.5">
           {FILTERS.map((f) => (
             <button
               key={f.id}
@@ -114,6 +118,14 @@ export function ProjectList({ runs }: { runs: RunSummary[] }) {
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         {shown.map((r) => {
           const st = STATUS[r.status] ?? STATUS.running;
+          const entryLabel =
+            r.status === "succeeded"
+              ? "继续改"
+              : r.status === "awaiting_approval"
+                ? "审核需求"
+                : r.status === "running"
+                  ? "查看进度"
+                  : "继续处理";
           return (
             <div
               key={r.id}
@@ -145,16 +157,18 @@ export function ProjectList({ runs }: { runs: RunSummary[] }) {
                   href={`/workspace?run=${r.id}`}
                   className="rounded-lg bg-ink-800 px-2.5 py-1.5 text-[11px] text-ink-200 transition-colors hover:bg-ink-700"
                 >
-                  继续改
+                  {entryLabel}
                 </Link>
-                <button
-                  type="button"
-                  onClick={() => copyAppLink(r.id)}
-                  title="复制这个应用自己的公开链接"
-                  className="ml-auto text-[11px] text-ink-500 transition-colors hover:text-emerald-300"
-                >
-                  {copiedId === r.id ? "已复制" : "复制应用链接"}
-                </button>
+                {r.status === "succeeded" && (
+                  <button
+                    type="button"
+                    onClick={() => copyAppLink(r.id)}
+                    title="复制这个应用自己的公开链接"
+                    className="ml-auto text-[11px] text-ink-500 transition-colors hover:text-emerald-300"
+                  >
+                    {copiedId === r.id ? "已复制" : "复制应用链接"}
+                  </button>
+                )}
               </div>
             </div>
           );

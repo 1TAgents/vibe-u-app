@@ -33,8 +33,21 @@ export function WorkspaceClient() {
   const params = useSearchParams();
   const router = useRouter();
   const run = useRun();
-  const { start, load, state, phase, version, runId, approve, reject, sendMessage, abort, error } =
-    run;
+  const {
+    start,
+    load,
+    state,
+    phase,
+    version,
+    runId,
+    approve,
+    reject,
+    sendMessage,
+    deleteQueuedChange,
+    abort,
+    error,
+    queuedChanges,
+  } = run;
 
   const [view, setView] = useState<View>("design");
   const chatCollapsed = useSyncExternalStore(
@@ -132,7 +145,9 @@ export function WorkspaceClient() {
               state={state}
               phase={phase}
               version={version}
+              queuedChanges={queuedChanges}
               onSend={(t) => void sendMessage(t)}
+              onDeleteQueued={(id) => void deleteQueuedChange(id)}
             />
           )}
         </aside>

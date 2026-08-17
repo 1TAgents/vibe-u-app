@@ -5,7 +5,7 @@
  *      隐藏,jsdom 不该把它当成 visibility:hidden 而整面判不可见;
  *   2. 祖先 aria-hidden="true" 时,后代必须判为不可见;
  *   3. 隐藏面(aria-hidden/hidden/inert/display:none/visibility:hidden)的文字
- *      不参与 expectText / expectNoText —— 这是「你好」本不该还在页面上却报错的病灶;
+ *      不参与 expectText / expectNoText，避免把输入提示误判为页面结果;
  *   4. role=button / <button> 元素可点击,纯 <div onClick> 不算语义可点击。
  */
 

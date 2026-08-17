@@ -1,5 +1,5 @@
 /**
- * 场景压力覆盖护栏 —— 判定 Vera 写的验收用例是否真的碰到了该场景的难点。
+ * 场景压力覆盖护栏 —— 判定 Tess 写的验收用例是否真的碰到了该场景的难点。
  *
  * 常见假阳:QA 全过,但用例只覆盖了「能新建 / 能保存」这类骨架操作,
  * 场景真正难的语义(连续天数、聚合、时间冲突、除零、无第三方库…)根本没被测到。
@@ -7,8 +7,8 @@
  * 用例名与失败原因做匹配。
  *
  * 本模块是 **纯函数**、不依赖 testrunner/orchestrator,供两条链路复用:
- *  1. orchestrator 的 phaseQa —— Vera 产出用例后、真正 runTests 前先做覆盖门,
- *     缺覆盖就发 qa.coverage_retry 回喂 Vera 重写测试计划(前置软门,可迭代);
+ *  1. orchestrator 的 phaseQa —— Tess 产出用例后、真正 runTests 前先做覆盖门,
+ *     缺覆盖就发 qa.coverage_retry 回喂 Tess 重写测试计划(前置软门,可迭代);
  *  2. run-scenarios 的 runner —— QA 全过之后、verify/publish 之前做外层硬门,
  *     把「QA 全绿但没测重点」从隐形变显性,作为最后兜底,不再假装已交付。
  *
@@ -92,7 +92,7 @@ const normalizedFeatureName = (value: string) => value.replace(/\s+/g, "").toLoc
  * 正常用户链路的 PRD 覆盖门。
  *
  * 场景 guardrail 只能覆盖测试活动中已登记的 20 个固定场景；真实用户输入没有
- * scenarioId。Vera 因此必须为每条用例声明它覆盖的 P0 功能，确定性代码核对
+ * scenarioId。Tess 因此必须为每条用例声明它覆盖的 P0 功能，确定性代码核对
  * 所有 P0 是否至少被一条用例接住。声明本身不能代替操作步骤，但能先堵住
  * 「PRD 有 4 个核心功能、QA 只测了添加/保存就全绿」这一类最常见假阳。
  */
@@ -143,7 +143,7 @@ export const STRUCTURAL_GATES: Record<
     /**
      * 检查的是流转的**形状**,不是特定两列的名字。
      *
-     * 原先写死「进行中 → 已完成」。跑批里 Vera 交出的计划是
+     * 原先写死「进行中 → 已完成」。跑批里 Tess 交出的计划是
      *   在「待办列」断言 → click 切换状态 → 在「进行中列」断言 → 对「待办列」离开证据
      * 结构上一条不缺,只是走的是另一对列、列名跟着真实界面叫「待办列」,
      * 于是被连拒两轮、整场作废。这是同一个错误的第三次:
@@ -199,7 +199,7 @@ export const STRUCTURAL_GATES: Record<
      *
      * 它把 crm 连杀了七轮,三次都是用**错的理由**杀掉一个**对的测试**:
      *   一版硬要 expectValue —— 把「备注保存后渲染为详情文本」这种完全合理的
-     *   实现判死,Vera 按提示词改用 expectTextWithin 反被连拒;
+     *   实现判死,Tess 按提示词改用 expectTextWithin 反被连拒;
      *   一版加要求走完「保存 → 离开 → 重新进入」—— 她两轮都满足不了,整场跑死;
      *   一版只认 expectValue/expectTextWithin —— 而她写的是
      *     fill 电话沟通报价 → 保存 → expectText → 返回列表 → 点回该客户 → expectText

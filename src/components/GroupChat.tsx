@@ -19,6 +19,7 @@ import { useEffect, useRef, useState } from "react";
 import { cn, fmtMs, fmtTokens, fmtUsd } from "@/lib/cn";
 import { toFeed, type FeedItem } from "@/lib/chatfeed";
 import type { RunState } from "@/lib/fold";
+import type { QueuedChange } from "@/lib/store";
 import type { Phase } from "@/lib/useRun";
 
 const ACCENT: Record<string, { text: string; bg: string; ring: string }> = {
@@ -35,14 +36,18 @@ export function GroupChat({
   state,
   phase,
   version,
+  queuedChanges = [],
   onSend,
+  onDeleteQueued,
   /** 回放时只看不发 —— 但渲染逻辑与实时完全共用同一份 */
   readOnly = false,
 }: {
   state: RunState;
   phase: Phase;
   version: number;
+  queuedChanges?: QueuedChange[];
   onSend?: (text: string) => void;
+  onDeleteQueued?: (id: string) => void;
   readOnly?: boolean;
 }) {
   const [text, setText] = useState("");
@@ -53,10 +58,12 @@ export function GroupChat({
 
   const refining = phase === "awaiting_approval";
   // 审核阶段直接在右侧 PRD 卡接管修改并批准；群聊输入只处理已有产品的后续需求。
+  const busy = phase === "generating" || phase === "fixing" || phase === "verifying";
+  const hasActiveRun = state.prompt !== "" || state.timeline.length > 0;
   const ready =
-    state.files.length > 0 &&
-    (phase === "succeeded" || phase === "failed" || phase === "verifying");
-  const busy = phase === "generating" || phase === "fixing";
+    phase !== "awaiting_approval" &&
+    phase !== "idle" &&
+    (state.files.length > 0 || (busy && hasActiveRun));
 
   // 只在用户没有主动往上翻时才自动贴底 —— 否则他正看历史就被拽走了
   useEffect(() => {
@@ -116,49 +123,108 @@ export function GroupChat({
       </div>
 
       {!readOnly && (
-      <div className="shrink-0 border-t border-ink-800 p-3">
-        <div
-          className={cn(
-            "rounded-lg border bg-ink-900/60 transition-colors",
-            ready ? "border-ink-700 focus-within:border-violet-400/50" : "border-ink-800",
+        <div className="shrink-0 border-t border-ink-800 bg-ink-950/95">
+          {queuedChanges.length > 0 && (
+            <section aria-label="待处理任务" className="border-b border-ink-800/80 px-3 py-2">
+              <div className="mb-1.5 flex items-center gap-2">
+                <span className="text-[10px] font-medium text-ink-300">待处理</span>
+                <span className="rounded-full bg-violet-500/15 px-1.5 py-px font-mono text-[9px] text-violet-300">
+                  {queuedChanges.length}
+                </span>
+                <span className="ml-auto text-[9px] text-ink-600">当前轮结束后按顺序执行</span>
+              </div>
+              <div className="max-h-28 space-y-1 overflow-auto pr-0.5">
+                {queuedChanges.map((item, index) => {
+                  const canDelete = item.status === "pending";
+                  return (
+                    <div
+                      key={item.id}
+                      className="group flex min-h-8 items-center gap-2 rounded-md border border-ink-700/80 bg-ink-900/80 px-2 py-1.5"
+                    >
+                      <QueueIcon />
+                      <span className="min-w-0 flex-1 truncate text-[11px] text-ink-200" title={item.text}>
+                        {item.text}
+                      </span>
+                      <span className="shrink-0 text-[9px] text-ink-600">
+                        {canDelete ? `第 ${index + 1} 条` : "处理中"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => canDelete && onDeleteQueued?.(item.id)}
+                        disabled={!canDelete}
+                        aria-label={`删除排队任务：${item.text}`}
+                        title={canDelete ? "删除这条排队任务" : "任务已开始处理，不能删除"}
+                        className="flex size-6 shrink-0 items-center justify-center rounded text-ink-500 transition-colors hover:bg-rose-500/10 hover:text-rose-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50 disabled:cursor-not-allowed disabled:opacity-30"
+                      >
+                        <TrashIcon />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
           )}
-        >
-          <textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                send();
-              }
-            }}
-            disabled={!ready}
-            rows={2}
-            placeholder={
-              refining
-                ? "请在右侧 PRD 卡中修改或批准需求"
-                : ready
-                  ? "描述你想调整的内容…"
-                  : busy
-                    ? "团队正在忙…"
-                    : "等应用做好就可以在这里提要求"
-            }
-            className="w-full resize-none bg-transparent px-2.5 py-2 text-[12px] leading-relaxed text-ink-100 outline-none placeholder:text-ink-600 disabled:cursor-not-allowed"
-          />
-          <div className="flex items-center gap-2 px-2 pb-1.5">
-            <span className="text-[10px] text-ink-600">Enter 发送</span>
-            <button
-              onClick={send}
-              disabled={!ready || !text.trim()}
-              className="ml-auto rounded bg-violet-500/90 px-2.5 py-1 text-[11px] font-medium text-ink-950 transition-colors hover:bg-violet-400 disabled:cursor-not-allowed disabled:bg-ink-800 disabled:text-ink-600"
+
+          <div className="p-3">
+            <div
+              className={cn(
+                "rounded-lg border bg-ink-900/60 transition-colors",
+                ready ? "border-ink-700 focus-within:border-violet-400/50" : "border-ink-800",
+              )}
             >
-              发送
-            </button>
+              <textarea
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    send();
+                  }
+                }}
+                disabled={!ready}
+                rows={2}
+                placeholder={
+                  refining
+                    ? "请在右侧 PRD 卡中修改或批准需求"
+                    : busy
+                      ? "继续提要求，将排到当前轮之后…"
+                      : ready
+                        ? "描述你想调整的内容…"
+                        : "等应用做好就可以在这里提要求"
+                }
+                className="w-full resize-none bg-transparent px-2.5 py-2 text-[12px] leading-relaxed text-ink-100 outline-none placeholder:text-ink-600 disabled:cursor-not-allowed"
+              />
+              <div className="flex items-center gap-2 px-2 pb-1.5">
+                <span className="text-[10px] text-ink-600">Enter 发送</span>
+                <button
+                  onClick={send}
+                  disabled={!ready || !text.trim()}
+                  className="ml-auto rounded bg-violet-500/90 px-2.5 py-1 text-[11px] font-medium text-ink-950 transition-colors hover:bg-violet-400 disabled:cursor-not-allowed disabled:bg-ink-800 disabled:text-ink-600"
+                >
+                  {busy || queuedChanges.length > 0 ? "排队" : "发送"}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
       )}
     </div>
+  );
+}
+
+function QueueIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true" className="size-3.5 shrink-0 text-violet-300/80">
+      <path d="M4 4v5a3 3 0 0 0 3 3h7m-3-3 3 3-3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true" className="size-3.5">
+      <path d="M4.5 6h11M8 3.5h4M6 6l.7 10h6.6L14 6M8.25 8.5v5M11.75 8.5v5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 

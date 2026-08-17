@@ -131,7 +131,7 @@ async function runCase(
   });
 
   const dom = new JSDOM(html, {
-    url: `http://glassbox.local/a/${runId}`,
+    url: `http://vibeu.local/a/${runId}`,
     runScripts: "dangerously",
     pretendToBeVisual: true,
     virtualConsole,
@@ -145,6 +145,7 @@ async function runCase(
 
   const win = dom.window;
   const doc = win.document;
+  const context: StepContext = {};
 
   try {
     // 等首屏挂载与初次数据加载
@@ -152,7 +153,7 @@ async function runCase(
 
     for (let i = 0; i < tc.steps.length; i++) {
       const step = tc.steps[i];
-      const err = await execStep(doc, win, step);
+      const err = await execStep(doc, win, step, context);
       if (err) {
         return {
           case: tc.name,
@@ -180,15 +181,35 @@ async function runCase(
   }
 }
 
+/**
+ * 保留最近一次真实交互命中的 DOM 节点。
+ *
+ * 很多语义按钮在操作后会改可访问名称，例如「任务 标记完成」点击后变成
+ * 「任务 取消完成」。紧随其后的状态断言仍可能用操作前名称描述同一个控件；
+ * 若重新按旧名称查询，会把正确实现误报成「找不到」。这里只允许目标文字完全
+ * 相同的后续属性断言复用该节点，避免把别的控件误认成刚操作的控件。
+ */
+interface StepContext {
+  lastInteraction?: {
+    target: string;
+    element: HTMLElement;
+  };
+}
+
 async function execStep(
   doc: Document,
   win: DOMWindow,
   step: TestStep,
+  context: StepContext,
 ): Promise<string | null> {
   switch (step.action) {
     case "click": {
       const el = findClickable(doc, step.target);
       if (!el) return `找不到可点击的「${step.target}」`;
+      context.lastInteraction = {
+        target: normalizeText(step.target),
+        element: el as HTMLElement,
+      };
       // 用元素原生 click() 走完整的激活行为。直接 dispatchEvent 只派发一条事件,
       // 对按钮的默认动作、表单提交和 React 的委托事件并不总是等价。
       (el as HTMLElement).click();
@@ -199,6 +220,10 @@ async function execStep(
     case "fill": {
       const el = findInput(doc, step.target);
       if (!el) return `找不到输入框「${step.target}」`;
+      context.lastInteraction = {
+        target: normalizeText(step.target),
+        element: el,
+      };
       setNativeValue(win, el, step.value);
       await sleep(SETTLE_MS);
       return null;
@@ -274,7 +299,8 @@ async function execStep(
     }
 
     case "expectAttribute": {
-      const el = findElementWithAttr(doc, step.target, step.attr);
+      const el = findElementWithAttr(doc, step.target, step.attr)
+        ?? findAttributeOnLastInteraction(context, step.target, step.attr);
       if (!el) return `找不到带 ${step.attr} 的「${step.target}」`;
       const ok = await waitFor(() => attrMatches(el, step.attr, step.value));
       if (ok) return null;
@@ -283,7 +309,8 @@ async function execStep(
     }
 
     case "expectNoAttribute": {
-      const el = findElementWithAttr(doc, step.target, step.attr);
+      const el = findElementWithAttr(doc, step.target, step.attr)
+        ?? findAttributeOnLastInteraction(context, step.target, step.attr);
       if (!el) return `找不到带 ${step.attr} 的「${step.target}」`;
       const ok = await waitFor(() => !attrMatches(el, step.attr, step.value));
       if (ok) return null;
@@ -302,6 +329,12 @@ function findElementWithAttr(doc: Document, label: string, attr: string): HTMLEl
   const el = findElement(doc, label);
   if (!el) return null;
 
+  return findAttributeCarrier(el, attr);
+}
+
+/** 从一个已确定的控件向自身/祖先/唯一后代寻找语义属性承载元素。 */
+function findAttributeCarrier(el: HTMLElement, attr: string): HTMLElement | null {
+
   for (let cur: HTMLElement | null = el; cur; cur = cur.parentElement) {
     if (cur.hasAttribute(attr)) return cur;
   }
@@ -312,6 +345,22 @@ function findElementWithAttr(doc: Document, label: string, attr: string): HTMLEl
   // 而猜错会得到一个看起来通过了的错误断言。
   const inner = [...el.querySelectorAll<HTMLElement>(`[${attr}]`)].filter(isVisible);
   return inner.length === 1 ? inner[0] : null;
+}
+
+/**
+ * 操作导致 aria-label/title/文字变化时，属性断言可继续检查刚才操作的同一控件。
+ * 目标必须逐字归一化后相同，节点仍须留在当前文档且可见；任一条件不满足就
+ * 回到正常的「找不到」失败，绝不拿最近一次无关控件兜底。
+ */
+function findAttributeOnLastInteraction(
+  context: StepContext,
+  target: string,
+  attr: string,
+): HTMLElement | null {
+  const last = context.lastInteraction;
+  if (!last || last.target !== normalizeText(target)) return null;
+  if (!last.element.isConnected || !isVisible(last.element)) return null;
+  return findAttributeCarrier(last.element, attr);
 }
 
 /** 按可见文字定位元素(不限于可点击):精确文字 → aria-label/title → 包含文字,取最深。 */

@@ -4,7 +4,7 @@
  * 这道门存在的意义是**把责任放对地方**:测试计划里编出来的控件名,
  * 该由写测试的人改,不该让写实现的人去猜。所以这里重点验两件事:
  *   1. 真编造的能拦下(否则门形同虚设)
- *   2. 合法写法一个都不误拦 —— 误拦会让 Vera 反复重写正确的计划,比漏拦更糟
+ *   2. 合法写法一个都不误拦 —— 误拦会让 Tess 反复重写正确的计划,比漏拦更糟
  */
 
 import assert from "node:assert/strict";
@@ -23,9 +23,9 @@ function tc(name: string, steps: TestCase["steps"]): TestCase {
   return { name, steps } as TestCase;
 }
 
-/* --- 真实失败复现:跑批里 Vera 编出来的那几个名字 --- */
+/* --- 真实失败复现:跑批里 Tess 编出来的那几个名字 --- */
 {
-  // poll 场景:PRD 只要求展示票数,Vera 却要求存在一个叫「露营 票数」的区域
+  // poll 场景:PRD 只要求展示票数,Tess 却要求存在一个叫「露营 票数」的区域
   const r = checkTargets(
     [
       tc("参与投票", [
@@ -43,7 +43,7 @@ function tc(name: string, steps: TestCase["steps"]): TestCase {
 }
 
 {
-  // flashcard 场景:Vera 要求一个叫「卡片分组」的区域
+  // flashcard 场景:Tess 要求一个叫「卡片分组」的区域
   const r = checkTargets(
     [tc("已掌握分组", [{ action: "expectTextWithin", target: "卡片分组", text: "serendipity" }] as TestCase["steps"])],
     src(`<h2>待复习</h2><h2>已掌握</h2>`),
@@ -105,7 +105,7 @@ function tc(name: string, steps: TestCase["steps"]): TestCase {
 }
 
 {
-  // 全角/半角括号之差不是编造 —— 误拦会让 Vera 重写一版本来正确的计划
+  // 全角/半角括号之差不是编造 —— 误拦会让 Tess 重写一版本来正确的计划
   const r = checkTargets(
     [tc("金额", [{ action: "fill", target: "金额(元)", value: "100" }] as TestCase["steps"])],
     src(`<input placeholder="金额(元)"/>`),
