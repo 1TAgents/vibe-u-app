@@ -73,6 +73,14 @@ const built = {
     ),
     { cause: "architecture" },
   );
+  assert.throws(
+    () => enforceQaTriageEscalation(
+      { cause: "architecture" as const },
+      2,
+      { implementation: 3, architecture: 2 },
+    ),
+    /升级到 requirements/,
+  );
   console.log("Orchestrator · ✓ 同一 P0 场景两次 QA 重写后强制升级责任层");
 }
 
@@ -196,6 +204,7 @@ const built = {
   assert.match(prompt.user, /当前验收计划/);
   assert.match(prompt.system, /连续退回 Tess 1 次/);
   assert.match(prompt.system, /implementation 多次无效应优先检查 architecture/);
+  assert.match(prompt.system, /architecture 多次无效应升级 requirements/);
   console.log("Orchestrator · ✓ QA 归因能看到真实空页面并识别缺失基础资源");
 }
 

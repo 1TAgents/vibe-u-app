@@ -579,6 +579,11 @@ export const UI_QUALITY_RULES = `界面质量门(必须全部遵守):
 - 切换模式/状态后要启动计时时，**不得依赖刚 setState 的旧闭包** —— setState 是异步的，setMode('rest') 之后再调用 startTimer()，闭包里的 mode 仍是上一次渲染的值。必须**显式把 nextMode 传给启动函数**或通过 ref 读取当前模式，不能在 setInterval 回调里读同一渲染周期的 state 决定走哪个分支。
 - db.insert/update/remove/fetch 等副作用**不得放在 setState 函数式更新器(setXxx((prev) => ...))内部** —— 更新器可能被重复调用(StrictMode 会调用两次)，副作用会重复执行。副作用放在事件处理器或 useEffect 里。
 - 计时/倒计时必须用**真实的 setInterval/setTimeout 随时间推进**(平台 QA 会推进时钟验证终态)；不要做成「只在点击时减一秒」的假计时，否则时间永远无法流逝到结束态。
+- **日期驱动状态必须能在页面保持打开时跨日更新**。打卡、预订、日报、连续天数等功能不能只在
+  首次 mount 或点击时把 \`new Date()\` 快照进闭包；维护一个 \`currentDay\` 日期键，并在
+  \`useEffect\` 中用带清理函数的 \`setInterval\` 周期刷新它。按钮是否可再次操作、连续天数是否
+  重置都从 \`currentDay\` 与持久化日期记录派生。平台 QA 会同时推进 \`new Date()\`、\`Date.now()\`
+  和定时器：推进一天后第二天的操作必须重新出现，推进两天后漏打边界必须立即可观察。
 - **可测试性契约**(不是测试专用按钮,是无障碍与自动化都要的确定性锚点):每条**可重复记录**的容器(列表项/卡片/行,如商品行)必须提供稳定 \`aria-label\`(格式「类型 名称」,如 \`aria-label="商品 苹果"\`),让 QA 能按名称精确定位到那一条记录。
 - **每条记录上的操作控件必须带记录名**:列表/卡片/行里的每个动作按钮(出库、入库、打卡、
   取消、标记已掌握、编辑、删除…)自身要带 \`aria-label\`,格式统一为**「名称 动作」**
@@ -1354,7 +1359,7 @@ implementation：实现漏了静态配置或种子数据。不能因为 QA 写�
 
 ${input.previousCause ? `注意:同一批 P0 覆盖在上一轮被归因为「${input.previousCause}」并修复后仍然失败 —— 请不要机械重复这一归因,说明问题可能在更深一层。\n` : ""}
 ${(input.testPlanRewriteCount ?? 0) > 0 ? `同一批 P0 场景已经连续退回 Tess ${input.testPlanRewriteCount} 次；必须确认本轮是新的测试计划错误，还是业务结果本身仍未实现。\n` : ""}
-${input.causeCounts && Object.keys(input.causeCounts).length > 0 ? `同一批 P0 场景的历史归因次数:${JSON.stringify(input.causeCounts)}。同一责任层反复修复仍失败时必须向更深层升级；implementation 多次无效应优先检查 architecture。\n` : ""}
+${input.causeCounts && Object.keys(input.causeCounts).length > 0 ? `同一批 P0 场景的历史归因次数:${JSON.stringify(input.causeCounts)}。同一责任层反复修复仍失败时必须向更深层升级；implementation 多次无效应优先检查 architecture，architecture 多次无效应升级 requirements 明确状态口径。\n` : ""}
 判断依据只有 Tess 的失败描述与现有产物,不要臆测。`,
     user: `产品定义(PRD):
 ${JSON.stringify(input.prd, null, 2)}

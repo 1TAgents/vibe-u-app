@@ -186,6 +186,12 @@ export function enforceQaTriageEscalation<T extends { cause: QaCause }>(
       "必要时再选择 requirements",
     );
   }
+  if (triage.cause === "architecture" && (causeCounts.architecture ?? 0) >= 2) {
+    throw new Error(
+      "同一批 P0 场景已连续两次完成 architecture 修订和工程落地但仍失败；" +
+      "不能继续重复架构方案，请升级到 requirements，由产品负责人明确可观察的状态口径和边界",
+    );
+  }
   return triage;
 }
 
