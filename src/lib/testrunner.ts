@@ -471,7 +471,7 @@ function findClickable(doc: Document, label: string): Element | null {
     ...doc.querySelectorAll<HTMLElement>(
       'button, a, [role="button"], input[type="submit"], input[type="checkbox"], label, li, div[onclick], span[onclick]',
     ),
-  ].filter(isVisible);
+  ].filter((element) => isVisible(element) && isActionable(element));
   const candidates = preferActiveDialog(doc, allCandidates);
 
   const norm = (s: string) => s.replace(/\s+/g, "").trim();
@@ -514,6 +514,23 @@ function findClickable(doc: Document, label: string): Element | null {
   if (actionPrefix.length === 1) return actionPrefix[0];
 
   return findByStableLabel(candidates, target);
+}
+
+/**
+ * Disabled controls are visible but cannot be activated by a real user.
+ *
+ * This distinction matters after advanceTime: React may need one render turn to
+ * replace today's disabled check-in button with tomorrow's enabled state. If we
+ * return the still-disabled node immediately, HTMLElement.click() is a no-op and
+ * the runner reports a false business failure. Treat it as temporarily absent so
+ * the normal interaction wait observes the actionable render instead.
+ */
+function isActionable(element: HTMLElement): boolean {
+  if (element.getAttribute("aria-disabled")?.trim().toLowerCase() === "true") return false;
+  if ("disabled" in element && Boolean((element as HTMLElement & { disabled?: boolean }).disabled)) {
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -928,7 +945,7 @@ function describeVisible(doc: Document): string {
   const labels = [
     ...doc.querySelectorAll<HTMLElement>('button, a, [role="button"]'),
   ]
-    .filter(isVisible)
+    .filter((element) => isVisible(element) && isActionable(element))
     .map((e) => visibleTextOf(e).replace(/\s+/g, " ").trim())
     .filter(Boolean)
     .slice(0, 15);

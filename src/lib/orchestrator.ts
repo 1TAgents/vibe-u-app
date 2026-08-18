@@ -94,6 +94,8 @@ interface WorkState {
   accepted: boolean;
   /** 最近一次功能验收是否针对当前代码通过。 */
   qaPassed: boolean;
+  /** 最新源码已经同时通过构建与静态审计，才允许交给 QA 执行。 */
+  codeReady: boolean;
   /** Tess 失败后由 Ida 给出的强制下一责任人；Piper 不得覆盖产品负责人的分配。 */
   requiredDispatches?: Dispatch[];
   /** 同一问题修后仍失败时，提醒 Ida 不要机械重复上一层归因。 */
@@ -462,6 +464,7 @@ async function runRole(
   if (next === "pm") {
     st.accepted = false;
     st.qaPassed = false;
+    st.codeReady = false;
     st.built = undefined;
     st.html = undefined;
     const p = pmPrompt(`${st.request}\n\n本轮要求:${brief}`);
@@ -480,6 +483,7 @@ async function runRole(
     if (!st.prd) throw new Error("还没有 PRD,设计无从下手");
     st.accepted = false;
     st.qaPassed = false;
+    st.codeReady = false;
     st.built = undefined;
     st.html = undefined;
     const p = visualDesignerPrompt(`${st.request}\n\n本轮要求:${brief}`, st.prd);
@@ -497,6 +501,7 @@ async function runRole(
     if (!st.prd || !st.visual) throw new Error("架构要在 PRD 与视觉方案之后");
     st.accepted = false;
     st.qaPassed = false;
+    st.codeReady = false;
     st.built = undefined;
     st.html = undefined;
     const p = architectPrompt(`${st.request}\n\n本轮要求:${brief}`, st.prd, st.visual);
@@ -514,6 +519,7 @@ async function runRole(
     if (!st.prd || !st.design || !st.visual) throw new Error("实现要在设计之后");
     st.accepted = false;
     st.qaPassed = false;
+    st.codeReady = false;
     // 新源码出现后，旧构建产物不再代表当前文件，失败时也绝不能回退使用旧 bundle。
     st.built = undefined;
     st.html = undefined;
@@ -546,7 +552,20 @@ async function runRole(
     st.files = withRuntimeFiles(isFix ? mergeGeneratedFiles(st.files, code.files) : code.files);
     sink.emit({ type: "artifact", kind: "files", data: authored(st.files) });
 
-    await fireGates(sink, st, "artifact:files", runId);
+    const fileCheck = await fireGates(sink, st, "artifact:files", runId);
+    st.codeReady = fileCheck.passed;
+    if (!fileCheck.passed) {
+      const evidence = fileCheck.facts.join("；") || "最新源码未通过构建或静态审计";
+      // 构建/静态审计已经给出了确定性的源码证据。此时运行 QA 只会在一份
+      // 明知不合格的候选代码上制造新的噪声，且可能让 Piper 错把问题派回 Tess。
+      // 平台直接把同一候选退给 Cody，直到代码门通过后才开放 QA。
+      st.requiredDispatches = [{
+        next: "engineer",
+        reason: `最新源码未通过代码门，必须先由 Cody 修复：${evidence}`,
+        brief: `逐条修复构建或静态审计证据后重新构建；代码门通过前不要安排 QA：${evidence}`,
+      }];
+      return;
+    }
     // 代码可跑之后顺手探一次界面 —— 这不是门,是给 Tess 的信息
     if (st.gatesPassed && st.html) {
       try {
@@ -597,6 +616,17 @@ async function runRole(
 
   if (next === "qa") {
     if (!st.prd) throw new Error("没有 PRD,不知道该验什么");
+    if (!st.codeReady) {
+      const evidence = st.facts.join("；") || "最新源码尚未同时通过构建与静态审计";
+      st.facts = [`代码门尚未通过，禁止在已知不合格的候选代码上执行 QA：${evidence}`];
+      st.gatesPassed = false;
+      st.requiredDispatches = [{
+        next: "engineer",
+        reason: st.facts[0],
+        brief: `先修复最新代码门证据并重新构建：${evidence}`,
+      }];
+      return;
+    }
     st.accepted = false;
     st.qaPassed = false;
     const visible = st.screen;
@@ -888,6 +918,7 @@ export async function runLoop(
     budget: emptyBudget(),
     accepted: false,
     qaPassed: false,
+    codeReady: false,
     scenarioId: input.scenarioId,
     ...input.initial,
     qaTestPlanRewriteCount: input.initial?.qaTestPlanRewriteCount ?? 0,
