@@ -335,6 +335,55 @@ export const STRUCTURAL_GATES: Record<
   string,
   { label: string; check: (cases: QaCaseLike[]) => boolean }
 > = {
+  habit: {
+    label:
+      "步骤证据同时覆盖日期边界：连续两天打卡需 advanceTime ≥1天后再次打卡并精确断言连续天数 ≥2；" +
+      "漏打至少一天需累计 advanceTime ≥2天后精确断言连续天数重置为 0 或重新打卡后为 1",
+    check: (cases) => {
+      const dayMs = 86_400_000;
+      const hasConsecutiveDays = cases.some((testCase) => {
+        const steps = testCase.steps ?? [];
+        const advanceIndex = steps.findIndex(
+          (step) => step.action === "advanceTime" && (step.ms ?? 0) >= dayMs,
+        );
+        if (advanceIndex < 0) return false;
+        const clickIndex = steps.findIndex(
+          (step, index) => index > advanceIndex && step.action === "click",
+        );
+        if (clickIndex < 0) return false;
+        return steps.some(
+          (step, index) =>
+            index > clickIndex &&
+            step.action === "expectNumberWithin" &&
+            Number(step.value) >= 2,
+        );
+      });
+
+      const hasSkippedDayReset = cases.some((testCase) => {
+        const steps = testCase.steps ?? [];
+        let advanced = 0;
+        let reachesGapAt = -1;
+        for (let index = 0; index < steps.length; index++) {
+          const step = steps[index];
+          if (step.action !== "advanceTime") continue;
+          advanced += step.ms ?? 0;
+          if (advanced >= 2 * dayMs) {
+            reachesGapAt = index;
+            break;
+          }
+        }
+        if (reachesGapAt < 0) return false;
+        return steps.some(
+          (step, index) =>
+            index > reachesGapAt &&
+            step.action === "expectNumberWithin" &&
+            [0, 1].includes(Number(step.value)),
+        );
+      });
+
+      return hasConsecutiveDays && hasSkippedDayReset;
+    },
+  },
   pomodoro: {
     label: "步骤证据含 advanceTime 推进 ≥1500 秒(25 分钟)",
     check: (cases) =>

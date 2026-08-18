@@ -16,20 +16,45 @@ assert.equal(coarse.covered, false);
 assert.ok(coarse.missing.some((s) => /连续|streak|天数|连签/.test(s)));
 console.log("Stress coverage · ✓ habit 只测骨架时标记难点未覆盖");
 
-// habit:用例真的碰到连续天数 → 覆盖
+// habit:名字提到连续天数但没有跨日步骤与精确结果，仍然不能算覆盖
 const thorough = stressCovered("habit", [
   { cases: [{ name: "能新建习惯" }, { name: "查看连续天数时跨天不中断" }] },
 ]);
-assert.equal(thorough.covered, true);
-assert.deepEqual(thorough.missing, []);
-console.log("Stress coverage · ✓ habit 覆盖连续天数时判定通过");
+assert.equal(thorough.covered, false);
+assert.ok(thorough.missing.some((item) => item.includes("advanceTime")));
+console.log("Stress coverage · ✓ habit 仅在名称里写连续天数仍被结构门拒绝");
 
-// 失败原因也算进覆盖文本
+// 失败原因只算文本语义证据，不能替代跨日操作证据
 const viaReason = stressCovered("habit", [
   { cases: [{ name: "打卡", ok: false, reason: "连续天数显示不对" }] },
 ]);
-assert.equal(viaReason.covered, true);
-console.log("Stress coverage · ✓ 失败原因同样计入覆盖文本");
+assert.equal(viaReason.covered, false);
+console.log("Stress coverage · ✓ habit 失败文案不能替代跨日步骤证据");
+
+const habitWithDateBoundaries = stressCovered("habit", [{
+  cases: [
+    {
+      name: "连续两天打卡累加",
+      steps: [
+        { action: "click", target: "早睡 打卡" },
+        { action: "advanceTime", ms: 86_400_000 },
+        { action: "click", target: "早睡 打卡" },
+        { action: "expectNumberWithin", target: "早睡 连续天数", value: "2" },
+      ],
+    },
+    {
+      name: "漏打一天重置",
+      steps: [
+        { action: "click", target: "跑步 打卡" },
+        { action: "advanceTime", ms: 172_800_000 },
+        { action: "expectNumberWithin", target: "跑步 连续天数", value: "0" },
+      ],
+    },
+  ],
+}]);
+assert.equal(habitWithDateBoundaries.covered, true);
+assert.deepEqual(habitWithDateBoundaries.missing, []);
+console.log("Stress coverage · ✓ habit 跨日累加与漏打重置均有可执行证据时通过");
 
 // 未配置的场景(未来新增)不误杀
 assert.equal(stressCovered("future-scenario", [{ cases: [{ name: "x" }] }]).covered, true);
