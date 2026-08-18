@@ -11,7 +11,9 @@ import {
   completionIssues,
   coverageMissingFromFacts,
   deliveryRepairDispatch,
+  enforceQaTriageEscalation,
   mergeGeneratedFiles,
+  qaCoverageSignature,
   qaTriageEvidence,
   qaTriageDispatch,
   qaTriageRoute,
@@ -30,6 +32,25 @@ const built = {
   durationMs: 1,
   warnings: [],
 };
+
+{
+  assert.equal(
+    qaCoverageSignature([
+      { name: "连续打卡", covers: ["连续天数", "每日打卡"], steps: [] },
+      { name: "隔天重置", covers: ["连续天数"], steps: [] },
+    ]),
+    "每日打卡|连续天数",
+  );
+  assert.throws(
+    () => enforceQaTriageEscalation({ cause: "test-plan" as const }, 2),
+    /不能再次选择 test-plan/,
+  );
+  assert.deepEqual(
+    enforceQaTriageEscalation({ cause: "implementation" as const }, 2),
+    { cause: "implementation" },
+  );
+  console.log("Orchestrator · ✓ 同一 P0 场景两次 QA 重写后强制升级责任层");
+}
 
 {
   assert.deepEqual(
@@ -133,12 +154,22 @@ const built = {
     design: { dataModel: [], pages: [], notes: "会议室是产品基础资源" },
     failures: ["找不到可点击的「会议室A 08:00-08:30 空闲」"],
     screen: { clickables: ["我的预订"], inputs: [], regions: ["我的预订"] },
+    cases: [{
+      name: "连续两天预订",
+      covers: ["快速预订"],
+      steps: [{ action: "expectAttribute", attr: "aria-pressed", value: "false" }],
+    }],
+    testPlanRewriteCount: 1,
   });
   assert.match(prompt.system, /漏了静态配置或种子数据/);
   assert.match(prompt.system, /报销单、训练记录等本来就由用户创建/);
   assert.match(prompt.system, /绝不能用缺种子数据解释后续失败/);
   assert.match(prompt.user, /平台界面探查/);
   assert.match(prompt.user, /我的预订/);
+  assert.match(prompt.system, /P0 功能时，这条业务场景必须保留/);
+  assert.match(prompt.system, /aria-pressed[\s\S]*不自动等于业务结果/);
+  assert.match(prompt.user, /当前验收计划/);
+  assert.match(prompt.system, /连续退回 Tess 1 次/);
   console.log("Orchestrator · ✓ QA 归因能看到真实空页面并识别缺失基础资源");
 }
 
@@ -172,6 +203,7 @@ const built = {
     /不要断言 PRD 未要求的 aria-invalid/,
     "QA 返工 brief 必须携带 Ida 的具体归因，不能只给通用重写指令",
   );
+  assert.match(qaTriageDispatch(qaRetry).brief, /P0 的业务场景必须保留/);
   console.log("Orchestrator · ✓ Ida 分配包含上游修订→工程落地的完整确定性路线");
 }
 

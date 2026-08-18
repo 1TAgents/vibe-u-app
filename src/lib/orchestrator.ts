@@ -100,6 +100,10 @@ interface WorkState {
   lastQaCause?: QaCause;
   /** 与 lastQaCause 配套；只有失败事实完全相同才算“同一问题”。 */
   lastQaFailureSignature?: string;
+  /** 失败用例映射到的 P0 功能集合；比会改写的失败文案更稳定。 */
+  lastQaCoverageSignature?: string;
+  /** 同一批 P0 覆盖连续被判为测试计划错误的次数。 */
+  qaTestPlanRewriteCount: number;
 }
 
 export interface RunResult {
@@ -139,6 +143,32 @@ export function coverageMissingFromFacts(facts: string[]): string[] {
       .map((fact) => fact.slice("缺覆盖:".length).trim())
       .filter(Boolean),
   )];
+}
+
+/**
+ * 用 P0 covers 识别“还是同一批业务场景”。失败文案和用例名可能每轮改写，
+ * 但 PRD 功能名是稳定合同；只有靠它才能阻止 Tess 换个说法后无限重写。
+ */
+export function qaCoverageSignature(cases?: TestCase[]): string {
+  return [...new Set((cases ?? []).flatMap((item) => item.covers ?? []))]
+    .map((name) => name.trim())
+    .filter(Boolean)
+    .sort()
+    .join("|");
+}
+
+/** 同一 P0 场景最多允许两轮“只是测试写错了”，之后必须升级看更深责任层。 */
+export function enforceQaTriageEscalation<T extends { cause: QaCause }>(
+  triage: T,
+  priorTestPlanRewrites: number,
+): T {
+  if (triage.cause === "test-plan" && priorTestPlanRewrites >= 2) {
+    throw new Error(
+      "同一批 P0 场景已连续两次修订测试计划，不能再次选择 test-plan；" +
+      "请依据业务结果归因到 requirements、architecture、visual 或 implementation",
+    );
+  }
+  return triage;
 }
 
 /**
@@ -332,6 +362,7 @@ export function qaTriageDispatch(triage: QaTriage): Dispatch {
       reason: `Ida 判断 QA 测试计划本身有误：${triage.reason}`,
       brief:
         `严格依据 PRD 与真实页面重写验收用例，不修改产品实现来迎合错误断言。` +
+        `只替换错误的步骤或断言；凡 covers 命中 P0 的业务场景必须保留，并继续验证真实业务结果。` +
         `必须纠正 Ida 指出的具体问题：${triage.reason}`,
     },
     emma: {
@@ -606,6 +637,8 @@ async function runRole(
       st.requiredDispatches = undefined;
       st.lastQaCause = undefined;
       st.lastQaFailureSignature = undefined;
+      st.lastQaCoverageSignature = undefined;
+      st.qaTestPlanRewriteCount = 0;
       return;
     }
 
@@ -614,19 +647,26 @@ async function runRole(
     if (st.design && functional.facts.length > 0) {
       try {
         const currentFailureSignature = failureSignature(functional.facts);
+        const currentCoverageSignature = qaCoverageSignature(st.cases);
+        const sameCoverage =
+          currentCoverageSignature.length > 0 &&
+          st.lastQaCoverageSignature === currentCoverageSignature;
+        const priorTestPlanRewrites = sameCoverage ? st.qaTestPlanRewriteCount : 0;
         const triageFailures = qaTriageEvidence(functional.facts, planCheck);
         const triagePrompt = qaTriagePrompt({
           prd: st.prd,
           design: st.design,
           visual: st.visual,
           failures: triageFailures,
+          cases: st.cases,
+          testPlanRewriteCount: priorTestPlanRewrites,
           screen: st.screen ? {
             clickables: st.screen.clickables,
             inputs: st.screen.inputs,
             regions: st.screen.regions,
           } : undefined,
           previousCause:
-            st.lastQaFailureSignature === currentFailureSignature
+            sameCoverage || st.lastQaFailureSignature === currentFailureSignature
               ? st.lastQaCause
               : undefined,
         });
@@ -640,7 +680,10 @@ async function runRole(
             maxTokens: 3000,
             jsonMode: true,
           },
-          (value) => QaTriageSchema.parse(extractJson(value)),
+          (value) => {
+            const parsed = QaTriageSchema.parse(extractJson(value));
+            return enforceQaTriageEscalation(parsed, priorTestPlanRewrites);
+          },
           signal,
         );
         const triage = buildQaTriage({
@@ -650,6 +693,9 @@ async function runRole(
         });
         st.lastQaCause = triage.cause;
         st.lastQaFailureSignature = currentFailureSignature;
+        st.lastQaCoverageSignature = currentCoverageSignature;
+        st.qaTestPlanRewriteCount =
+          triage.cause === "test-plan" ? priorTestPlanRewrites + 1 : 0;
         st.requiredDispatches = qaTriageRoute(triage);
         sink.emit({ type: "qa.triage", attempt: st.budget.dispatches, triage });
         st.facts = [
@@ -800,6 +846,7 @@ export async function runLoop(
     qaPassed: false,
     scenarioId: input.scenarioId,
     ...input.initial,
+    qaTestPlanRewriteCount: input.initial?.qaTestPlanRewriteCount ?? 0,
   };
 
   if (input.emitRunStarted !== false) {

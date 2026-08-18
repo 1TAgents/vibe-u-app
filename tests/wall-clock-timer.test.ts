@@ -8,6 +8,8 @@ const source = `
   import { useRef, useState } from "react";
   function App() {
     const [status, setStatus] = useState("待开始");
+    const [day, setDay] = useState(0);
+    const startedOn = useRef(new Date());
     const endAt = useRef(0);
     const timer = useRef(null);
     const start = () => {
@@ -20,7 +22,14 @@ const source = `
         }
       }, 250);
     };
-    return <main><button onClick={start}>开始</button><p>{status}</p></main>;
+    const readDay = () => {
+      const elapsed = new Date().getTime() - startedOn.current.getTime();
+      setDay(Math.round(elapsed / 86400000));
+    };
+    return <main>
+      <button onClick={start}>开始</button><p>{status}</p>
+      <button onClick={readDay}>查看日期</button><p>第{day}天</p>
+    </main>;
   }
   createRoot(document.getElementById("root")).render(<App />);
 `;
@@ -55,6 +64,17 @@ async function main() {
   }]);
   assert.equal(report.failed, 0, JSON.stringify(report.failures));
   console.log("Wall-clock timer · ✓ Date.now 与定时回调同步推进");
+
+  const dateReport = await runTests(html, "calendar-clock", [{
+    name: "new Date 与业务日期共用虚拟时间轴",
+    steps: [
+      { action: "advanceTime", ms: 86_400_000 },
+      { action: "click", target: "查看日期" },
+      { action: "expectText", text: "第1天" },
+    ],
+  }]);
+  assert.equal(dateReport.failed, 0, JSON.stringify(dateReport.failures));
+  console.log("Wall-clock timer · ✓ new Date 与业务日期同步推进");
 }
 
 main().catch((error) => {

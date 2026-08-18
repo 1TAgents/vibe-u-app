@@ -995,9 +995,23 @@ function getClock(win: DOMWindow): FakeClock {
  */
 function installFakeClock(win: DOMWindow) {
   const clock = getClock(win);
-  // 结束时间型计时器通常用 endAt - Date.now()，只推进回调队列却不推进
-  // Date.now 会让所有回调都认为时间没走。两者必须共用同一虚拟时间轴。
-  win.Date.now = () => clock.originMs + clock.now;
+  // 结束时间型计时器通常用 endAt - Date.now()，日期型业务（打卡、预订、日报）
+  // 则普遍直接 new Date()。只改 Date.now 会制造一条分裂时间线：测试声称已经
+  // advanceTime 一天，但应用里的 new Date() 仍停在真实今天，最终把测试基础设施
+  // 的缺陷误判给产品工程师。通过代理原生 Date，同时接管函数调用、无参构造和 now；
+  // 带参数构造、parse/UTC 仍由原生实现负责。
+  const NativeDate = win.Date;
+  const virtualNow = () => clock.originMs + clock.now;
+  const VirtualDate = new Proxy(NativeDate, {
+    apply(target) {
+      return new target(virtualNow()).toString();
+    },
+    construct(target, args) {
+      return Reflect.construct(target, args.length === 0 ? [virtualNow()] : args, target);
+    },
+  });
+  Object.defineProperty(VirtualDate, "now", { value: virtualNow });
+  win.Date = VirtualDate;
   const originalSetTimeout = win.setTimeout.bind(win);
   const originalClearTimeout = win.clearTimeout.bind(win);
   const schedule = (

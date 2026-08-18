@@ -1201,6 +1201,12 @@ expectAttribute / expectNoAttribute 断言承载该样式的元素上的**语义
 - **PRD 的每一个 P0 功能都必须至少被一条用例覆盖**。每条用例用 covers 数组声明它直接验证的
   P0 功能，数组值必须逐字复制 PRD coreFeatures 里的 name，不能改写或写成泛称。一条完整主流程
   可以覆盖多个 P0 功能；covers 只是可审计映射，steps 仍必须真的操作并断言这些功能。
+- **修订失败用例时不得删掉 P0 业务场景。** 如果 Ida 指出某个 \`aria-pressed\`、提示文案、
+  装饰状态等辅助断言没有产品依据，只删除或替换那个断言；原用例仍要用 PRD 直接承诺的
+  业务结果收口。例如“连续两天打卡”必须断言连续天数为 2，“隔天漏打”必须断言连续天数
+  归零，不能因为按钮语义状态写错就把这两个场景一起取消。
+- P1/P2 或未映射产品承诺的附加场景可以按本轮范围替换；P0 场景的去留由 PRD 优先级决定，
+  不由 Tess 为了让报告变绿自行决定。
 - 覆盖 PRD 里最核心的 1-3 条主流程,每条一个用例,总共不超过 4 个用例。
 - 走完整闭环:填内容 → 提交 → 断言它出现了。只断言静态文案没有意义。
 - 断言的文字要用你**自己刚填进去的值**,那是唯一能确定会出现的内容。
@@ -1297,6 +1303,10 @@ export function qaTriagePrompt(input: {
   screen?: { clickables: string[]; inputs: string[]; regions: string[] };
   /** 上一轮归因 —— 同样用例修后仍失败时,提示 Ida 不要重复归因 */
   previousCause?: QaCause;
+  /** 当前验收计划。Ida 需要看 covers，不能因一个坏断言删掉整条 P0 场景。 */
+  cases?: { name: string; covers?: string[]; steps?: unknown[] }[];
+  /** 同一批 P0 覆盖已经连续退回 Tess 的次数。 */
+  testPlanRewriteCount?: number;
 }) {
   return {
     system: `你是 Ida,产品负责人。测试工程师 Tess 刚把验收报告交到你手上,你的职责是**归因与分配**:
@@ -1309,6 +1319,17 @@ export function qaTriagePrompt(input: {
 - architecture:数据模型、跨模块边界、状态流转或技术方案支撑不了该功能 → Archie 修订设计
 - visual:界面视觉、信息层级、交互本身让人无法理解或无从操作 → Luna 修订视觉方案
 - implementation:代码实现、运行时、构建、或与既定设计不一致 → Cody 修代码
+
+**先判断场景重要性，再判断坏的是场景还是其中一个断言:**
+- \`covers\` 命中 PRD 的 P0 功能时，这条业务场景必须保留。即使其中某一步断言了 PRD
+  没规定的 \`aria-pressed\`、提示文案或装饰状态，也只能删改这一个坏断言，不能把整条
+  P0 场景取消测试。改写后的用例必须继续验证真正的业务结果，例如连续天数是否变成 2、
+  隔天漏打后是否归零。
+- P1/P2 或没有映射任何产品承诺的附加场景，才可以在确认不属于本次交付范围后替换或删除。
+- \`aria-pressed\` 只描述按钮当前是否处于按下/选中状态，不自动等于业务结果。按钮打卡后
+  保持 \`true\` 可能完全合理；应改用连续天数、完成记录或页面业务状态判断功能是否正确。
+- 如果 Tess 已修正辅助断言，而同一个 P0 业务结果仍不符合 PRD，就不能继续归为
+  test-plan；应按证据分给 implementation / architecture / visual / requirements。
 
 不要仅因为视觉方案把操作描述为“图标按钮”，就认定 Tess 写的「记录名 动作」是臆造文案:
 平台要求图标按钮也必须有同格式的 aria-label，这正是合法的可访问名称。同理，用户在用例里
@@ -1329,7 +1350,8 @@ implementation：实现漏了静态配置或种子数据。不能因为 QA 写�
 计算类失败必须先把用例输入代入既定公式复算。若 QA 的月供、总利息、比例或合计预期
 算错，cause 必须是 test-plan；绝不能把错误数字交给 Cody，要求产品实现去匹配错误答案。
 
-${input.previousCause ? `注意:同一批用例在上一轮被归因为「${input.previousCause}」并修复后仍然失败 —— 请不要再重复这一归因,说明问题出在更深一层。\n` : ""}
+${input.previousCause ? `注意:同一批 P0 覆盖在上一轮被归因为「${input.previousCause}」并修复后仍然失败 —— 请不要机械重复这一归因,说明问题可能在更深一层。\n` : ""}
+${(input.testPlanRewriteCount ?? 0) > 0 ? `同一批 P0 场景已经连续退回 Tess ${input.testPlanRewriteCount} 次；必须确认本轮是新的测试计划错误，还是业务结果本身仍未实现。\n` : ""}
 判断依据只有 Tess 的失败描述与现有产物,不要臆测。`,
     user: `产品定义(PRD):
 ${JSON.stringify(input.prd, null, 2)}
@@ -1339,6 +1361,7 @@ ${JSON.stringify(input.design, null, 2)}
 
 ${input.visual ? `产品视觉方案:\n${JSON.stringify(input.visual, null, 2)}\n` : ""}
 ${input.screen ? `平台界面探查(空数据初始状态):\n${JSON.stringify(input.screen, null, 2)}\n` : ""}
+${input.cases ? `当前验收计划(用 covers 判断场景是否属于 P0 承诺):\n${JSON.stringify(input.cases, null, 2)}\n` : ""}
 Tess 的失败报告:
 ${input.failures.map((f, i) => `${i + 1}. ${f}`).join("\n")}
 
