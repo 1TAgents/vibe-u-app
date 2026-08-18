@@ -57,6 +57,22 @@ const built = {
     enforceQaTriageEscalation({ cause: "implementation" as const }, 2),
     { cause: "implementation" },
   );
+  assert.throws(
+    () => enforceQaTriageEscalation(
+      { cause: "implementation" as const },
+      2,
+      { implementation: 3 },
+    ),
+    /升级到 architecture/,
+  );
+  assert.deepEqual(
+    enforceQaTriageEscalation(
+      { cause: "architecture" as const },
+      2,
+      { implementation: 3 },
+    ),
+    { cause: "architecture" },
+  );
   console.log("Orchestrator · ✓ 同一 P0 场景两次 QA 重写后强制升级责任层");
 }
 
@@ -168,6 +184,7 @@ const built = {
       steps: [{ action: "expectAttribute", attr: "aria-pressed", value: "false" }],
     }],
     testPlanRewriteCount: 1,
+    causeCounts: { "test-plan": 1, implementation: 2 },
   });
   assert.match(prompt.system, /漏了静态配置或种子数据/);
   assert.match(prompt.system, /报销单、训练记录等本来就由用户创建/);
@@ -178,6 +195,7 @@ const built = {
   assert.match(prompt.system, /aria-pressed[\s\S]*不自动等于业务结果/);
   assert.match(prompt.user, /当前验收计划/);
   assert.match(prompt.system, /连续退回 Tess 1 次/);
+  assert.match(prompt.system, /implementation 多次无效应优先检查 architecture/);
   console.log("Orchestrator · ✓ QA 归因能看到真实空页面并识别缺失基础资源");
 }
 

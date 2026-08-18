@@ -1307,6 +1307,8 @@ export function qaTriagePrompt(input: {
   cases?: { name: string; covers?: string[]; steps?: unknown[] }[];
   /** 同一批 P0 覆盖已经连续退回 Tess 的次数。 */
   testPlanRewriteCount?: number;
+  /** 同一批 P0 在各责任层已经修过多少次。 */
+  causeCounts?: Partial<Record<QaCause, number>>;
 }) {
   return {
     system: `你是 Ida,产品负责人。测试工程师 Tess 刚把验收报告交到你手上,你的职责是**归因与分配**:
@@ -1352,6 +1354,7 @@ implementation：实现漏了静态配置或种子数据。不能因为 QA 写�
 
 ${input.previousCause ? `注意:同一批 P0 覆盖在上一轮被归因为「${input.previousCause}」并修复后仍然失败 —— 请不要机械重复这一归因,说明问题可能在更深一层。\n` : ""}
 ${(input.testPlanRewriteCount ?? 0) > 0 ? `同一批 P0 场景已经连续退回 Tess ${input.testPlanRewriteCount} 次；必须确认本轮是新的测试计划错误，还是业务结果本身仍未实现。\n` : ""}
+${input.causeCounts && Object.keys(input.causeCounts).length > 0 ? `同一批 P0 场景的历史归因次数:${JSON.stringify(input.causeCounts)}。同一责任层反复修复仍失败时必须向更深层升级；implementation 多次无效应优先检查 architecture。\n` : ""}
 判断依据只有 Tess 的失败描述与现有产物,不要臆测。`,
     user: `产品定义(PRD):
 ${JSON.stringify(input.prd, null, 2)}

@@ -104,6 +104,8 @@ interface WorkState {
   lastQaCoverageSignature?: string;
   /** 同一批 P0 承诺在本轮运行中被退回 Tess 的累计次数。 */
   qaTestPlanRewriteCount: number;
+  /** 同一批 P0 承诺在各责任层的累计归因次数，用于失败后向更深层升级。 */
+  qaCauseCounts: Partial<Record<QaCause, number>>;
 }
 
 export interface RunResult {
@@ -169,11 +171,19 @@ export function qaCoverageSignature(
 export function enforceQaTriageEscalation<T extends { cause: QaCause }>(
   triage: T,
   priorTestPlanRewrites: number,
+  causeCounts: Partial<Record<QaCause, number>> = {},
 ): T {
   if (triage.cause === "test-plan" && priorTestPlanRewrites >= 2) {
     throw new Error(
       "同一批 P0 场景已连续两次修订测试计划，不能再次选择 test-plan；" +
       "请依据业务结果归因到 requirements、architecture、visual 或 implementation",
+    );
+  }
+  if (triage.cause === "implementation" && (causeCounts.implementation ?? 0) >= 3) {
+    throw new Error(
+      "同一批 P0 场景已连续三次归因到 implementation 且工程修复后仍失败；" +
+      "不能继续原层重试，请升级到 architecture 检查数据模型、状态流转或时间边界，" +
+      "必要时再选择 requirements",
     );
   }
   return triage;
@@ -647,6 +657,7 @@ async function runRole(
       st.lastQaFailureSignature = undefined;
       st.lastQaCoverageSignature = undefined;
       st.qaTestPlanRewriteCount = 0;
+      st.qaCauseCounts = {};
       return;
     }
 
@@ -665,6 +676,7 @@ async function runRole(
           currentCoverageSignature.length > 0 &&
           st.lastQaCoverageSignature === currentCoverageSignature;
         const priorTestPlanRewrites = sameCoverage ? st.qaTestPlanRewriteCount : 0;
+        const priorCauseCounts = sameCoverage ? st.qaCauseCounts : {};
         const triageFailures = qaTriageEvidence(functional.facts, planCheck);
         const triagePrompt = qaTriagePrompt({
           prd: st.prd,
@@ -673,6 +685,7 @@ async function runRole(
           failures: triageFailures,
           cases: st.cases,
           testPlanRewriteCount: priorTestPlanRewrites,
+          causeCounts: priorCauseCounts,
           screen: st.screen ? {
             clickables: st.screen.clickables,
             inputs: st.screen.inputs,
@@ -695,7 +708,11 @@ async function runRole(
           },
           (value) => {
             const parsed = QaTriageSchema.parse(extractJson(value));
-            return enforceQaTriageEscalation(parsed, priorTestPlanRewrites);
+            return enforceQaTriageEscalation(
+              parsed,
+              priorTestPlanRewrites,
+              priorCauseCounts,
+            );
           },
           signal,
         );
@@ -713,6 +730,10 @@ async function runRole(
         st.qaTestPlanRewriteCount = triage.cause === "test-plan"
           ? priorTestPlanRewrites + 1
           : priorTestPlanRewrites;
+        st.qaCauseCounts = {
+          ...priorCauseCounts,
+          [triage.cause]: (priorCauseCounts[triage.cause] ?? 0) + 1,
+        };
         st.requiredDispatches = qaTriageRoute(triage);
         sink.emit({ type: "qa.triage", attempt: st.budget.dispatches, triage });
         st.facts = [
@@ -864,6 +885,7 @@ export async function runLoop(
     scenarioId: input.scenarioId,
     ...input.initial,
     qaTestPlanRewriteCount: input.initial?.qaTestPlanRewriteCount ?? 0,
+    qaCauseCounts: input.initial?.qaCauseCounts ?? {},
   };
 
   if (input.emitRunStarted !== false) {
