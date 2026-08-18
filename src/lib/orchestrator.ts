@@ -102,7 +102,7 @@ interface WorkState {
   lastQaFailureSignature?: string;
   /** 失败用例映射到的 P0 功能集合；比会改写的失败文案更稳定。 */
   lastQaCoverageSignature?: string;
-  /** 同一批 P0 覆盖连续被判为测试计划错误的次数。 */
+  /** 同一批 P0 承诺在本轮运行中被退回 Tess 的累计次数。 */
   qaTestPlanRewriteCount: number;
 }
 
@@ -149,8 +149,16 @@ export function coverageMissingFromFacts(facts: string[]): string[] {
  * 用 P0 covers 识别“还是同一批业务场景”。失败文案和用例名可能每轮改写，
  * 但 PRD 功能名是稳定合同；只有靠它才能阻止 Tess 换个说法后无限重写。
  */
-export function qaCoverageSignature(cases?: TestCase[]): string {
-  return [...new Set((cases ?? []).flatMap((item) => item.covers ?? []))]
+export function qaCoverageSignature(
+  cases?: TestCase[],
+  p0Features: string[] = [],
+): string {
+  // 测试计划正是可能写错、被重写的产物，不能拿它自己的 covers 当唯一身份。
+  // 有 PRD 时以稳定的 P0 承诺为准；纯函数单测/旧调用没有 PRD 才降级读 cases。
+  const source = p0Features.length > 0
+    ? p0Features
+    : (cases ?? []).flatMap((item) => item.covers ?? []);
+  return [...new Set(source)]
     .map((name) => name.trim())
     .filter(Boolean)
     .sort()
@@ -647,7 +655,12 @@ async function runRole(
     if (st.design && functional.facts.length > 0) {
       try {
         const currentFailureSignature = failureSignature(functional.facts);
-        const currentCoverageSignature = qaCoverageSignature(st.cases);
+        const currentCoverageSignature = qaCoverageSignature(
+          st.cases,
+          st.prd.coreFeatures
+            .filter((feature) => feature.priority === "P0")
+            .map((feature) => feature.name),
+        );
         const sameCoverage =
           currentCoverageSignature.length > 0 &&
           st.lastQaCoverageSignature === currentCoverageSignature;
@@ -694,8 +707,12 @@ async function runRole(
         st.lastQaCause = triage.cause;
         st.lastQaFailureSignature = currentFailureSignature;
         st.lastQaCoverageSignature = currentCoverageSignature;
-        st.qaTestPlanRewriteCount =
-          triage.cause === "test-plan" ? priorTestPlanRewrites + 1 : 0;
+        // 工程、架构或需求修改不会抹掉此前已经浪费的 QA 重写次数；否则
+        // test-plan → implementation → test-plan 可以无限交替规避上限。
+        // 只有整批 P0 验收真正通过时才在上方清零。
+        st.qaTestPlanRewriteCount = triage.cause === "test-plan"
+          ? priorTestPlanRewrites + 1
+          : priorTestPlanRewrites;
         st.requiredDispatches = qaTriageRoute(triage);
         sink.emit({ type: "qa.triage", attempt: st.budget.dispatches, triage });
         st.facts = [

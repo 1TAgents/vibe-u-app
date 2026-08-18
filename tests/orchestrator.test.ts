@@ -41,6 +41,14 @@ const built = {
     ]),
     "每日打卡|连续天数",
   );
+  assert.equal(
+    qaCoverageSignature(
+      [{ name: "被改写的用例", covers: ["错误标签"], steps: [] }],
+      ["每日打卡", "连续天数"],
+    ),
+    "每日打卡|连续天数",
+    "存在 PRD P0 清单时，签名不得随 Tess 改写 covers 而漂移",
+  );
   assert.throws(
     () => enforceQaTriageEscalation({ cause: "test-plan" as const }, 2),
     /不能再次选择 test-plan/,
